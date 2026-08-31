@@ -1,0 +1,2221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>When will I actually buy an apartment? — Property Planner</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<!-- Tailwind CSS (Play CDN — no build step) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Chart.js, for the four charts (progress / outflow / breakdown / totals) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+
+<!-- Lucide icons (vanilla build) -->
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+  /* Ported as-is from the original component: a bespoke theme (light + dark, both driven by
+     CSS custom properties) plus a handful of hand-built controls (toggle switch, radio pills,
+     color picker, tooltips, custom chart crosshair) that are easier to express as plain CSS
+     than as Tailwind utility classes. Tailwind (loaded above) drives the "hidden" utility used
+     for tab switching and is available for further tweaks. */
+
+  html, body { margin: 0; padding: 0; }
+
+  .np-root {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 10% -10%, var(--bg-grad-start) 0%, var(--bg) 55%);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 28px 20px 60px;
+    transition: background .2s, color .2s;
+    overflow-x: hidden;
+  }
+  .np-root[data-theme="dark"] {
+    --bg: #10141b; --bg-grad-start: #16202a; --panel: #171c25; --panel2: #1d2430; --line: #2a3341;
+    --text: #e9ecf1; --muted: #8b93a1; --ok: #7fd9b0; --warn: #e8a33d; --danger: #e8735a;
+    --danger-text: #f0a998; --input-bg: #0d1117; --axis: #5c6472; --grid: #222a36; --row-hover: #12161f;
+  }
+  .np-root[data-theme="light"] {
+    --bg: #f3efe6; --bg-grad-start: #ece4d1; --panel: #fffdfa; --panel2: #f2ede1; --line: #ded5c0;
+    --text: #2b271f; --muted: #79705f; --ok: #1f8a5c; --warn: #a56a1e; --danger: #b34a34;
+    --danger-text: #8a3324; --input-bg: #ffffff; --axis: #948a76; --grid: #e5ddc9; --row-hover: #f7f2e6;
+  }
+  .np-root * { box-sizing: border-box; }
+  .np-serif { font-family: 'Source Serif 4', Georgia, serif; }
+  .np-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hidden { display: none !important; }
+
+  .np-header { max-width: 1180px; margin: 0 auto 22px; }
+  .np-header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  .np-header-controls { display: flex; gap: 8px; align-items: center; flex-shrink: 0; flex-wrap: wrap; max-width: 100%; }
+  .np-theme-toggle { background: var(--panel2); border: 1px solid var(--line); flex-shrink: 0; }
+  .np-select { background: var(--input-bg); border: 1px solid var(--line); color: var(--text); font-size: 12.5px; padding: 8px 10px; border-radius: 8px; outline: none; cursor: pointer; max-width: 100%; }
+  .np-eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--warn); margin-bottom: 8px; }
+  .np-title { font-family: 'Source Serif 4', Georgia, serif; font-size: 30px; font-weight: 600; margin: 0 0 6px; }
+  .np-subtitle { color: var(--muted); font-size: 14px; max-width: 640px; line-height: 1.5; }
+
+  .np-goalbar { max-width: 1180px; margin: 0 auto 22px; background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .np-goalbar-title { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); width: 100%; margin-bottom: 2px; }
+
+  .np-field { display: flex; flex-direction: column; gap: 5px; min-width: 130px; flex: 1; }
+  .np-field-label { font-size: 11.5px; color: var(--muted); }
+  .np-field-input-wrap { position: relative; }
+  .np-input { width: 100%; background: var(--input-bg); border: 1px solid var(--line); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13.5px; padding: 8px 34px 8px 10px; border-radius: 8px; outline: none; transition: border-color .15s; }
+  .np-input-error { border-color: var(--danger); }
+  .np-input:focus { border-color: var(--warn); }
+  .np-suffix { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--muted); pointer-events: none; }
+  .np-hint { font-size: 10.5px; color: var(--axis); display: block; }
+  .np-hint-error { color: var(--danger-text); }
+  .np-hint-block { font-size: 11.5px; color: var(--muted); background: var(--input-bg); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+
+  .np-grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 8px; }
+  .np-subrow { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-top: 10px; }
+  .np-subrow .np-radio-group { margin-top: 20px; }
+
+  .np-layout { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; width: 100%; }
+
+  .np-scenario-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 4px; flex-wrap: wrap; }
+  .np-scenario-head h2 { font-family: 'Source Serif 4', serif; font-size: 18px; margin: 0; }
+  .np-head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .np-addbtn { display: flex; align-items: center; gap: 6px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; transition: border-color .15s; }
+  .np-add-menu-wrap { position: relative; display: inline-block; }
+  .np-add-menu { position: absolute; top: 100%; right: 0; margin-top: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.25); padding: 6px; width: 260px; z-index: 20; display: none; }
+  .np-add-menu-wrap:hover .np-add-menu, .np-add-menu-wrap.open .np-add-menu { display: block; }
+  .np-add-menu-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; background: none; border: none; border-radius: 7px; padding: 8px 10px; cursor: pointer; color: var(--text); }
+  .np-add-menu-item:hover { background: var(--panel2); }
+  .np-add-menu-item-label { font-size: 13px; font-weight: 600; }
+  .np-add-menu-item-desc { font-size: 11px; color: var(--muted); line-height: 1.35; }
+  .np-addbtn:hover { border-color: var(--warn); }
+
+  .np-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
+
+  .np-card { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 12px; padding: 14px 16px 16px; transition: opacity .15s; min-width: 0; }
+  .np-card-hidden { opacity: 0.5; }
+  .np-card-head { display: flex; align-items: center; gap: 8px; }
+  .np-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .np-color-picker { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; flex-shrink: 0; }
+  .np-color-picker .np-dot { width: 14px; height: 14px; box-shadow: 0 0 0 3px var(--panel2); }
+  .np-color-picker input[type="color"] { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; border: none; padding: 0; cursor: pointer; }
+  .np-name-input { background: transparent; border: none; color: var(--text); font-family: 'Source Serif 4', serif; font-size: 16px; font-weight: 600; flex: 1; min-width: 0; outline: none; border-bottom: 1px solid transparent; padding: 2px 0; text-overflow: ellipsis; }
+  .np-name-input:focus { border-bottom-color: var(--accent); }
+  .np-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .np-iconbtn { background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 5px; border-radius: 6px; display: flex; }
+  .np-iconbtn:hover { background: var(--panel2); color: var(--text); }
+  .np-iconbtn:disabled { opacity: .25; cursor: default; }
+  .np-iconbtn:disabled:hover { background: transparent; color: var(--muted); }
+
+  .np-card-summary { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 2px; }
+  .np-badge { font-size: 11px; padding: 4px 9px; border-radius: 999px; font-family: 'JetBrains Mono', monospace; display: inline-flex; align-items: center; }
+  .np-badge-ok { background: rgba(127,217,176,.12); color: var(--ok); }
+  .np-badge-warn { background: rgba(232,163,61,.12); color: var(--warn); }
+  .np-badge-muted { background: var(--panel2); color: var(--muted); }
+
+  .np-warning { display: flex; gap: 7px; align-items: center; background: rgba(232,115,90,.1); color: var(--danger-text); border: 1px solid rgba(232,115,90,.3); padding: 8px 10px; border-radius: 8px; font-size: 12px; margin: 10px 0; }
+
+  .np-card-body { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .np-section-title { display: flex; align-items: center; gap: 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 2px; }
+  .np-section-title:first-child { margin-top: 0; }
+  .np-stage { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 12px; margin-top: 10px; }
+
+  .np-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; cursor: pointer; }
+  .np-toggle input { display: none; }
+  .np-toggle-track { width: 30px; height: 17px; background: var(--line); border-radius: 999px; position: relative; transition: background .15s; }
+  .np-toggle input:checked + .np-toggle-track { background: var(--accent, var(--ok)); }
+  .np-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; background: var(--input-bg); border-radius: 50%; transition: transform .15s; }
+  .np-toggle input:checked + .np-toggle-track .np-toggle-thumb { transform: translateX(13px); background: var(--input-bg); }
+  .np-toggle-label { font-size: 10.5px; color: var(--muted); font-family: 'JetBrains Mono', monospace; min-width: 62px; }
+
+  .np-radio-group { display: flex; gap: 6px; background: var(--input-bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
+  .np-radio { font-size: 11.5px; padding: 6px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); display: flex; align-items: center; }
+  .np-radio input { display: none; }
+  .np-radio.active { background: var(--panel2); color: var(--text); }
+
+  .np-tabs { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 4px; width: fit-content; margin-top: 6px; }
+  .np-tab { padding: 8px 16px; border-radius: 7px; font-size: 13px; color: var(--muted); cursor: pointer; border: none; background: transparent; }
+  .np-tab.active { background: var(--panel2); color: var(--text); }
+  .np-tab-panel { display: none; }
+  .np-tab-panel.np-tab-active { display: block; }
+
+  .np-chart-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 8px; }
+  .np-chart-title { font-family: 'Source Serif 4', serif; font-size: 16px; margin: 0 0 2px; }
+  .np-chart-desc { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .np-chart-head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+  .np-chart-head-row > *:first-child { flex: 1 1 auto; min-width: 0; }
+  .np-chart-head-row .np-radio-group { flex-shrink: 0; }
+
+  .np-legend-row { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .np-legend-item { display: flex; align-items: center; gap: 6px; }
+  .np-legend-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; display: inline-block; }
+
+  .np-scenario-picker { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+  .np-pick { display: flex; align-items: center; gap: 7px; background: var(--input-bg); border: 1px solid var(--line); color: var(--muted); padding: 7px 12px; border-radius: 999px; font-size: 12.5px; cursor: pointer; transition: border-color .15s, color .15s; }
+  .np-pick:hover { color: var(--text); }
+  .np-pick.active { background: var(--panel2); }
+
+  .np-table-wrap { overflow-x: auto; }
+  .np-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+  .np-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .np-table td { padding: 9px 10px; border-bottom: 1px solid var(--panel2); font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+  .np-table tr:hover td { background: var(--row-hover); }
+  .np-scenario-cell { display: flex; align-items: center; gap: 7px; font-family: 'Inter', sans-serif; }
+  .np-scenario-cell-btn { background: none; border: none; padding: 0; cursor: pointer; color: inherit; font: inherit; text-align: left; }
+  .np-scenario-cell-btn:hover { color: var(--text); text-decoration: underline; }
+
+  .np-empty-state { text-align: center; padding: 44px 20px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .np-empty-state p { max-width: 420px; font-size: 13.5px; line-height: 1.5; margin: 0; }
+
+  .np-markers-legend { display: flex; gap: 16px; font-size: 11.5px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+  .np-markers-legend span { display: flex; align-items: center; gap: 5px; }
+
+  .np-chart-canvas-wrap { position: relative; width: 100%; }
+
+  /* Custom crosshair overlay for the progress chart (dashed cross + two floating value
+     labels), positioned in JS from Chart.js's own pixel<->value scale conversion. */
+  .np-crosshair-v, .np-crosshair-h, .np-crosshair-label-x, .np-crosshair-label-y { display: none; pointer-events: none; }
+  .np-crosshair-v.visible, .np-crosshair-h.visible, .np-crosshair-label-x.visible, .np-crosshair-label-y.visible { display: block; }
+  .np-crosshair-v { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--axis); }
+  .np-crosshair-h { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--axis); }
+  .np-crosshair-label-x, .np-crosshair-label-y { position: absolute; background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text); white-space: nowrap; }
+  .np-crosshair-label-x { bottom: 18px; transform: translateX(-50%); }
+  .np-crosshair-label-y { left: 4px; transform: translateY(-50%); }
+</style>
+</head>
+<body>
+<div class="np-root" id="app-root" data-theme="dark">
+
+  <div class="np-header np-header-row">
+    <div>
+      <div class="np-eyebrow" data-i18n="eyebrow">Planner · Real Estate</div>
+      <h1 class="np-title" data-i18n="title">When will I actually buy an apartment?</h1>
+      <p class="np-subtitle" data-i18n="subtitle">Compare savings and mortgage scenarios accounting for property price inflation, rent growth, and salary growth — and see which path to your goal is faster and cheaper.</p>
+    </div>
+    <div class="np-header-controls">
+      <button class="np-iconbtn np-theme-toggle" id="theme-toggle-btn" data-action="toggle-theme" title="Light theme"></button>
+      <select class="np-select" id="language-select" title="Language"></select>
+      <select class="np-select" id="currency-select" title="Display currency (doesn't affect the calculation)"></select>
+    </div>
+  </div>
+
+  <div class="np-goalbar">
+    <div class="np-goalbar-title"><i data-lucide="trending-up" style="width:14px;height:14px"></i> <span data-i18n="goalTitle">Goal — the apartment</span></div>
+    <div id="goalbar-fields" style="display:contents"></div>
+  </div>
+
+  <div class="np-layout">
+    <div>
+      <div class="np-scenario-head">
+        <h2 id="scenario-count-heading">Scenarios (0)</h2>
+        <div class="np-head-actions">
+          <button class="np-addbtn" data-action="trigger-import"><i data-lucide="download" style="width:15px;height:15px"></i> <span data-i18n="loadFromFile">Load from file</span></button>
+          <button class="np-addbtn" data-action="export"><i data-lucide="upload" style="width:15px;height:15px"></i> <span data-i18n="exportToFile">Export to file</span></button>
+          <input id="file-input" type="file" accept="application/json" class="hidden" />
+          <span id="add-menu-header"></span>
+        </div>
+      </div>
+      <div id="import-error-container"></div>
+      <div class="np-empty-state hidden" id="empty-state-container">
+        <i data-lucide="wallet" style="width:22px;height:22px"></i>
+        <p data-i18n="emptyStateText">No scenarios yet. Add your first one to get started — or load a file with previously saved scenarios.</p>
+        <span id="add-menu-empty"></span>
+      </div>
+      <div class="np-cards" id="cards-container"></div>
+    </div>
+
+    <div>
+      <div class="np-tabs">
+        <button class="np-tab active" data-action="switch-tab" data-tab="progress" data-i18n="tabProgress">Progress to goal</button>
+        <button class="np-tab" data-action="switch-tab" data-tab="outflow" data-i18n="tabOutflow">Monthly payment</button>
+        <button class="np-tab" data-action="switch-tab" data-tab="spend" data-i18n="tabSpend">Total spend</button>
+      </div>
+    </div>
+
+    <div class="np-chart-card np-tab-panel np-tab-active" data-tab-panel="progress">
+      <div class="np-chart-head-row">
+        <div>
+          <h3 class="np-chart-title" id="progress-chart-title">Progress to goal, %</h3>
+          <p class="np-chart-desc" id="progress-chart-desc"></p>
+        </div>
+        <div class="np-radio-group">
+          <label class="np-radio active"><input type="radio" name="progressMode" data-progress-mode="percent" checked /> <span data-i18n="percentOfPrice">% of price</span></label>
+          <label class="np-radio"><input type="radio" name="progressMode" data-progress-mode="value" /> <span data-i18n="absoluteValue">Absolute value</span></label>
+        </div>
+      </div>
+      <div class="np-chart-canvas-wrap" id="progressChartWrap" style="height:380px">
+        <canvas id="progressChart"></canvas>
+        <div class="np-crosshair-v" id="crosshair-v"></div>
+        <div class="np-crosshair-h" id="crosshair-h"></div>
+        <div class="np-crosshair-label-x" id="crosshair-xlabel"></div>
+        <div class="np-crosshair-label-y" id="crosshair-ylabel"></div>
+      </div>
+      <div class="np-legend-row" id="progress-legend"></div>
+      <div class="np-markers-legend">
+        <span><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5" fill="var(--panel)" stroke="currentColor" stroke-width="2"/></svg> <span data-i18n="ringedDotLegend">ringed dot — move-in / end of rent</span></span>
+        <span><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="currentColor" stroke="var(--panel)" stroke-width="1.5"/></svg> <span data-i18n="solidDotLegend">solid dot — goal reached</span></span>
+      </div>
+    </div>
+
+    <div class="np-tab-panel" data-tab-panel="outflow">
+      <div class="np-chart-card">
+        <h3 class="np-chart-title" data-i18n="monthlyOutflowTitle">Monthly budget outflow</h3>
+        <p class="np-chart-desc" data-i18n="monthlyOutflowDesc">Rent plus the savings contribution / mortgage payment for the month. Shows how the payment changes at move-in and drops to zero once the goal is reached.</p>
+        <div class="np-chart-canvas-wrap" style="height:360px">
+          <canvas id="outflowChart"></canvas>
+        </div>
+        <div class="np-legend-row" id="outflow-legend"></div>
+      </div>
+
+      <div class="np-chart-card" style="margin-top:14px">
+        <h3 class="np-chart-title" data-i18n="paymentBreakdownTitle">What the payment is made of — by scenario</h3>
+        <p class="np-chart-desc" data-i18n="paymentBreakdownDesc">Breakdown of the monthly payment: rent, savings contribution, principal (actually builds equity), and interest (overpayment to the bank). Shows clearly that only part of the mortgage payment goes toward the property.</p>
+        <div class="np-scenario-picker" id="detail-picker"></div>
+        <div class="np-chart-canvas-wrap" style="height:340px">
+          <canvas id="detailChart"></canvas>
+        </div>
+        <div class="np-legend-row">
+          <span class="np-legend-item"><span class="np-legend-swatch" style="background:#5B9BD5"></span><span data-i18n="rentLabel">Rent</span></span>
+          <span class="np-legend-item"><span class="np-legend-swatch" style="background:#7FB77E"></span><span data-i18n="savingsLegend">Savings</span></span>
+          <span class="np-legend-item"><span class="np-legend-swatch" style="background:#4FD1C5"></span><span data-i18n="principalEquityLegend">Principal (builds equity)</span></span>
+          <span class="np-legend-item"><span class="np-legend-swatch" style="background:#E8735A"></span><span data-i18n="interestOverpayLegend">Interest (overpayment to the bank)</span></span>
+        </div>
+        <div class="np-hint-block" id="detail-hint" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div class="np-chart-card np-tab-panel" data-tab-panel="spend">
+      <h3 class="np-chart-title" data-i18n="moneyWentTitle">Where the money went, by scenario</h3>
+      <p class="np-chart-desc" data-i18n="moneyWentDesc">Total amount paid for rent, the property itself (cash purchase or down payment), and loan servicing (principal + interest), by the time the goal is reached (or by the end of the calculation horizon, if it isn't).</p>
+      <div class="np-chart-canvas-wrap" id="spendChartContainer" style="height:260px">
+        <canvas id="spendChart"></canvas>
+      </div>
+    </div>
+
+    <div class="np-chart-card">
+      <h3 class="np-chart-title" data-i18n="summaryAnalyticsTitle">Summary analytics</h3>
+      <div class="np-table-wrap">
+        <table class="np-table" id="summary-table">
+          <thead>
+            <tr>
+              <th data-i18n="tableScenario">Scenario</th>
+              <th data-i18n="tableGoalReached">Goal reached</th>
+              <th data-i18n="tableMoveIn">Move-in</th>
+              <th data-i18n="tableTotalRent">Total rent</th>
+              <th data-i18n="tablePurchaseDown">Purchase / down payment</th>
+              <th data-i18n="principalLegend">Principal</th>
+              <th data-i18n="tableInterestOverpay">Interest (overpayment)</th>
+              <th data-i18n="oneTimeCostsLegend">One-time costs</th>
+              <th data-i18n="tableTotalPaid">Total paid</th>
+            </tr>
+          </thead>
+          <tbody id="summary-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// ---------- helpers ----------
+// ============================================================
+const fmt = (n) => Math.round(n).toLocaleString("en-US");
+const rub = (n, symbol) => {
+  const s = symbol === undefined ? "₽" : symbol;
+  return fmt(n) + (s ? " " + s : "");
+};
+
+const LANGUAGE_OPTIONS = [
+  { value: "ru", label: "Русский" },
+  { value: "en", label: "English" },
+];
+// ---------- i18n ----------
+const STRINGS = {
+  eyebrow: { en: "Planner · Real Estate", ru: "Планировщик · Недвижимость" },
+  title: { en: "When will I actually buy an apartment?", ru: "Когда я реально куплю квартиру?" },
+  subtitle: { en: "Compare savings and mortgage scenarios accounting for property price inflation, rent growth, and salary growth — and see which path to your goal is faster and cheaper.", ru: "Сравните сценарии накопления и ипотеки с учётом инфляции цены квартиры, роста аренды и роста зарплаты — и увидьте, какой путь к цели быстрее и дешевле." },
+  lightTheme: { en: "Light theme", ru: "Светлая тема" },
+  darkTheme: { en: "Dark theme", ru: "Тёмная тема" },
+  currencyTitle: { en: "Display currency (doesn’t affect the calculation)", ru: "Валюта отображения (не влияет на расчёт)" },
+  languageTitle: { en: "Language", ru: "Язык" },
+
+  goalTitle: { en: "Goal — the apartment", ru: "Цель — квартира" },
+  priceToday: { en: "Property price today", ru: "Стоимость квартиры сегодня" },
+  priceGrowth: { en: "Property price growth", ru: "Рост цены квартиры" },
+  horizon: { en: "Calculation horizon", ru: "Горизонт расчёта" },
+
+  scenarios: { en: "Scenarios", ru: "Сценарии" },
+  loadFromFile: { en: "Load from file", ru: "Загрузить из файла" },
+  exportToFile: { en: "Export to file", ru: "Экспорт в файл" },
+  addScenario: { en: "Add scenario", ru: "Добавить сценарий" },
+  emptyStateText: { en: "No scenarios yet. Add your first one to get started — or load a file with previously saved scenarios.", ru: "Сценариев пока нет. Добавьте первый, чтобы начать — или загрузите файл с ранее сохранёнными сценариями." },
+  importErrorText: { en: "Could not read the file — make sure it’s a JSON file exported from here.", ru: "Не удалось прочитать файл — убедитесь, что это JSON, экспортированный отсюда же." },
+
+  tabProgress: { en: "Progress to goal", ru: "Прогресс к цели" },
+  tabOutflow: { en: "Monthly payment", ru: "Ежемесячный платёж" },
+  tabSpend: { en: "Total spend", ru: "Всего потрачено" },
+
+  presetBlankLabel: { en: "Blank", ru: "Пусто" },
+  presetBlankDesc: { en: "Start empty and fill everything in yourself.", ru: "Начните с чистого листа и заполните всё сами." },
+  presetCashLabel: { en: "Cash savings", ru: "Накопления" },
+  presetCashDesc: { en: "Save the full price, no mortgage. Good for a starting comparison.", ru: "Копите полную стоимость без ипотеки. Хороший вариант для старта сравнения." },
+  presetMortgageLabel: { en: "Mortgage now", ru: "Ипотека сразу" },
+  presetMortgageDesc: { en: "Take the loan right away with a down payment you already have.", ru: "Берёте кредит сразу с уже имеющимся первым взносом." },
+  presetSaveThenLabel: { en: "Save, then mortgage", ru: "Сначала копим, потом ипотека" },
+  presetSaveThenDesc: { en: "Save up a down payment first, then switch to a loan once it’s enough.", ru: "Сначала копите на первый взнос, потом переходите на кредит, как накопится нужная сумма." },
+  scenarioDefaultName: { en: "Scenario", ru: "Сценарий" },
+  copySuffix: { en: " (copy)", ru: " (копия)" },
+
+  chooseColor: { en: "Choose card color", ru: "Выбрать цвет карточки" },
+  showInAnalytics: { en: "Show in analytics", ru: "Показать в аналитике" },
+  hideFromAnalytics: { en: "Hide from analytics", ru: "Скрыть из аналитики" },
+  moveUp: { en: "Move up", ru: "Переместить вверх" },
+  moveDown: { en: "Move down", ru: "Переместить вниз" },
+  duplicate: { en: "Duplicate", ru: "Дублировать" },
+  deleteLabel: { en: "Delete", ru: "Удалить" },
+  hiddenFromAnalytics: { en: "hidden from analytics", ru: "скрыт из аналитики" },
+  calcError: { en: "Calculation error", ru: "Ошибка расчёта" },
+  goalLabel: { en: "Goal", ru: "Цель" },
+  notReachedInTime: { en: "Not reached in time", ru: "Не достигнута за срок" },
+  moveInLabel: { en: "Move-in", ru: "Переезд" },
+  enableStageWarning: { en: "Enable at least one stage — savings or mortgage", ru: "Включите хотя бы один этап — накопление или ипотеку" },
+  fillBudgetWarning: { en: "Fill in the housing budget below — the calculation needs it", ru: "Заполните бюджет на жильё ниже — без него расчёт не идёт" },
+  enterDownPaymentWarning: { en: "Enter the down payment in the Mortgage section", ru: "Укажите первоначальный взнос в разделе «Ипотека»" },
+
+  housingBudgetTitle: { en: "Housing budget", ru: "Бюджет на жильё" },
+  totalPerMonth: { en: "Total per month (t0 prices)", ru: "Всего в месяц (цены на t0)" },
+  rentPlusHint: { en: "Rent + whatever is saved or goes to the mortgage", ru: "Аренда + то, что копится или идёт в ипотеку" },
+  budgetGrowth: { en: "Budget growth", ru: "Рост бюджета" },
+  growsEvery: { en: "Grows every", ru: "Растёт раз в" },
+  budgetHintBlock: {
+    en: "This is your entire monthly housing budget, with its own growth from the start of the plan (t0). While rent is being paid, part of the budget goes to it and the rest is saved or goes to the mortgage. Once you move in, rent disappears and the whole budget goes to savings/the loan.",
+    ru: "Это весь ваш месячный бюджет на жильё, со своим ростом от старта плана (t0). Пока платится аренда — часть бюджета уходит на неё, остальное копится или идёт в ипотеку. После переезда аренда исчезает, и весь бюджет целиком идёт на накопление/кредит.",
+  },
+  currentlyLeftFor: { en: "Currently left for savings/mortgage:", ru: "Сейчас остаётся на накопление/ипотеку:" },
+  afterMovingInFull: { en: "after moving in — the full", ru: "после переезда — весь" },
+  occasionalBonus: { en: "Occasional bonus (e.g. once a year)", ru: "Периодическая премия (например, раз в год)" },
+  bonusHint: { en: "Added on top of the budget on bonus months", ru: "Добавляется к бюджету в месяцы премии" },
+  everyLabel: { en: "Every", ru: "Раз в" },
+  oneTimeCostLabel: { en: "One-time cost at purchase", ru: "Разовые расходы при покупке" },
+  oneTimeCostHint: { en: "Agent fees, renovation, moving — on top of the down payment", ru: "Риелтор, ремонт, переезд — сверх первого взноса" },
+
+  rentSectionTitle: { en: "Rent before moving in", ru: "Аренда до переезда" },
+  rentLabel: { en: "Rent", ru: "Аренда" },
+  rentIndexation: { en: "Rent indexation", ru: "Индексация аренды" },
+
+  stage1Title: { en: "Stage 1 · Savings", ru: "Этап 1 · Накопление" },
+  stage2Title: { en: "Stage 2 · Mortgage", ru: "Этап 2 · Ипотека" },
+  onLabel: { en: "on", ru: "вкл" },
+  offLabel: { en: "off", ru: "выкл" },
+  alreadySaved: { en: "Already saved", ru: "Уже накоплено" },
+  depositReturn: { en: "Deposit/investment return", ru: "Доходность вклада/инвестиций" },
+  savingsContribHint: { en: "Savings contribution = \"Housing budget\" minus rent that same month — calculated automatically.", ru: "Взнос на накопление = «Бюджет на жильё» минус аренда за этот месяц — считается автоматически." },
+  saveFixedTerm: { en: "Save for a fixed term", ru: "Копить фиксированный срок" },
+  saveUntilPercent: { en: "Save until % of price", ru: "Копить до % от цены" },
+  savingsTerm: { en: "Savings term", ru: "Срок накопления" },
+  targetPercentLabel: { en: "Target % of property price", ru: "Целевой % от стоимости квартиры" },
+  targetPercentHint: { en: "The percentage is of the current (indexed) price", ru: "Процент считается от текущей (проиндексированной) цены" },
+  savingUpFullHint: { en: "Saving up to the full property price — no mortgage is used.", ru: "Копите на полную стоимость квартиры — ипотека не используется." },
+
+  downPaymentOwn: { en: "Down payment (own funds)", ru: "Первый взнос (свои средства)" },
+  loanTerm: { en: "Loan term", ru: "Срок кредита" },
+  loanTermHint: { en: "Used to calculate the bank’s required payment", ru: "Используется для расчёта обязательного платежа банку" },
+  ratePref: { en: "Rate before moving in (preferential)", ru: "Ставка до переезда (льготная)" },
+  rateStandard: { en: "Rate after moving in", ru: "Ставка после переезда" },
+  paymentFormulaHint: { en: "Payment = \"Housing budget\" minus rent (while it’s paid); after moving in — the entire budget.", ru: "Платёж = «Бюджет на жильё» минус аренда (пока она платится); после переезда — весь бюджет целиком." },
+  requiredMinNow: { en: "Required bank minimum right now: before moving in —", ru: "Обязательный минимум банка сейчас: до переезда —" },
+  afterDash: { en: "after —", ru: "после —" },
+  anythingAboveMin: { en: "Anything above the minimum goes toward paying off the principal early.", ru: "Всё, что сверх минимума, идёт на досрочное погашение тела кредита." },
+  moveInImmediately: { en: "Move in immediately", ru: "Заселение сразу" },
+  buildingHandedLater: { en: "Building handed over later", ru: "Дом сдадут позже" },
+  handoverLabel: { en: "Handover, months after taking the mortgage", ru: "Сдача дома, месяцев после оформления ипотеки" },
+  handoverHint: { en: "Counted from when the mortgage starts, not from the start of the plan", ru: "Отсчитывается от начала ипотеки, а не от старта всего плана" },
+
+  targetPriceLabel: { en: "Target price", ru: "Целевая цена" },
+  totalPerMonthTooltip: { en: "Total per month", ru: "Итого в месяц" },
+  perMonthShort: { en: "/mo", ru: "/мес" },
+
+  percentOfPrice: { en: "% of price", ru: "% от цены" },
+  absoluteValue: { en: "Absolute value", ru: "Абсолютное значение" },
+  progressDescPercent: { en: "The share of the property’s price you actually own already (savings or paid-off debt). Dots mark the move-in and goal dates, and faint vertical lines mark signing, move-in, and payoff/purchase for each scenario.", ru: "Доля стоимости квартиры, которой вы уже реально владеете (накопления или выплаченный долг). Точки отмечают даты переезда и цели, а тонкие вертикальные линии — оформление, переезд и погашение/покупку для каждого сценария." },
+  progressDescValue: { en: "Same progress, but in absolute money terms — including the dashed target-price line, since the property itself keeps getting more expensive over time. For mortgage scenarios, a same-colour dashed line runs from the goal dot back to the moment the price was actually locked in (signing the loan).", ru: "Тот же прогресс, но в абсолютных деньгах — включая пунктирную линию целевой цены, поскольку сама квартира со временем дорожает. Для ипотечных сценариев пунктирная линия того же цвета идёт от точки цели назад к моменту, когда цена была реально зафиксирована (оформление кредита)." },
+  targetPriceDashedLegend: { en: "Target price (dashed)", ru: "Целевая цена (пунктир)" },
+  ringedDotLegend: { en: "ringed dot — move-in / end of rent", ru: "точка с кольцом — переезд / конец аренды" },
+  solidDotLegend: { en: "solid dot — goal reached", ru: "сплошная точка — цель достигнута" },
+
+  monthlyOutflowTitle: { en: "Monthly budget outflow", ru: "Ежемесячный расход бюджета" },
+  monthlyOutflowDesc: { en: "Rent plus the savings contribution / mortgage payment for the month. Shows how the payment changes at move-in and drops to zero once the goal is reached.", ru: "Аренда плюс взнос на накопление / платёж по ипотеке за месяц. Показывает, как платёж меняется при переезде и падает до нуля по достижении цели." },
+
+  paymentBreakdownTitle: { en: "What the payment is made of — by scenario", ru: "Из чего состоит платёж — по сценарию" },
+  paymentBreakdownDesc: { en: "Breakdown of the monthly payment: rent, savings contribution, principal (actually builds equity), and interest (overpayment to the bank). Shows clearly that only part of the mortgage payment goes toward the property.", ru: "Разбивка ежемесячного платежа: аренда, взнос на накопление, тело кредита (реально формирует капитал) и проценты (переплата банку). Наглядно видно, что в счёт квартиры идёт только часть ипотечного платежа." },
+  savingsLegend: { en: "Savings", ru: "Накопления" },
+  principalEquityLegend: { en: "Principal (builds equity)", ru: "Тело кредита (формирует капитал)" },
+  interestOverpayLegend: { en: "Interest (overpayment to the bank)", ru: "Проценты (переплата банку)" },
+  overFullTermFor: { en: "Over the full term for", ru: "За весь срок по сценарию" },
+  interestToBank: { en: "interest to the bank —", ru: "проценты банку —" },
+  principalDash: { en: "principal —", ru: "тело кредита —" },
+  overpaymentApprox: { en: "overpayment ≈", ru: "переплата ≈" },
+  ofFinancedPart: { en: "of the financed part of the property", ru: "от финансируемой части квартиры" },
+
+  moneyWentTitle: { en: "Where the money went, by scenario", ru: "Куда ушли деньги — по сценарию" },
+  moneyWentDesc: { en: "Total amount paid for rent, the property itself (cash purchase or down payment), and loan servicing (principal + interest), by the time the goal is reached (or by the end of the calculation horizon, if it isn’t).", ru: "Итоговая сумма, уплаченная за аренду, саму квартиру (покупка за наличные или первый взнос) и обслуживание кредита (тело + проценты) — к моменту достижения цели (или к концу горизонта расчёта, если цель не достигнута)." },
+  cashPurchaseLegend: { en: "Cash purchase", ru: "Покупка за наличные" },
+  downPaymentLegend: { en: "Down payment", ru: "Первый взнос" },
+  principalLegend: { en: "Principal", ru: "Тело кредита" },
+  interestLegend: { en: "Interest", ru: "Проценты" },
+  oneTimeCostsLegend: { en: "One-time costs", ru: "Разовые расходы" },
+
+  summaryAnalyticsTitle: { en: "Summary analytics", ru: "Сводная аналитика" },
+  tableScenario: { en: "Scenario", ru: "Сценарий" },
+  tableGoalReached: { en: "Goal reached", ru: "Цель достигнута" },
+  tableMoveIn: { en: "Move-in", ru: "Переезд" },
+  tableTotalRent: { en: "Total rent", ru: "Всего аренда" },
+  tablePurchaseDown: { en: "Purchase / down payment", ru: "Покупка / первый взнос" },
+  tableInterestOverpay: { en: "Interest (overpayment)", ru: "Проценты (переплата)" },
+  tableTotalPaid: { en: "Total paid", ru: "Всего уплачено" },
+  notReachedWithin: { en: "not reached within", ru: "не достигнута за" },
+  yearsShort: { en: "yr", ru: "лет" },
+
+  fillField: { en: "Fill in this field", ru: "Заполните это поле" },
+  unitMo: { en: "mo", ru: "мес" },
+  unitYr: { en: "yr", ru: "г" },
+};
+const t = (lang, key) => (STRINGS[key] && STRINGS[key][lang]) || STRINGS[key]?.en || key;
+
+const monthsToYM = (m, lang) => {
+  const y = Math.floor(m / 12), mm = m % 12;
+  const moUnit = t(lang, "unitMo"), yrUnit = t(lang, "unitYr");
+  if (y === 0) return `${mm} ${moUnit}`;
+  if (mm === 0) return `${y} ${yrUnit}`;
+  return `${y} ${yrUnit} ${mm} ${moUnit}`;
+};
+const yearsLabel = (years, lang) => monthsToYM(Math.round(years * 12), lang);
+const monthlyRateFromAnnual = (pct) => Math.pow(1 + pct / 100, 1 / 12) - 1;
+const annuityPayment = (principal, monthlyRate, months) => {
+  const n = Math.max(1, Math.round(months));
+  if (principal <= 0) return 0;
+  if (monthlyRate <= 0) return principal / n;
+  return (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -n));
+};
+const uid = () => Math.random().toString(36).slice(2, 9);
+const priceAtMonth = (global, m) => global.price0 * Math.pow(1 + monthlyRateFromAnnual(global.inflationPct), m);
+const PALETTE = ["#2CA58D", "#D9822B", "#D65745", "#7C6FE0", "#4F9A5C", "#4A80B5", "#C85A87", "#A68A3D"];
+const CURRENCY_OPTIONS = [
+  { value: "$", label: "$ Dollar" },
+  { value: "₽", label: "₽ Ruble" },
+  { value: "€", label: "€ Euro" },
+  { value: "֏", label: "֏ Armenian Dram" },
+  { value: "", label: "No currency" },
+];
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function setDeep(obj, path, value) {
+  const parts = path.split(".");
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) cur = cur[parts[i]];
+  cur[parts[parts.length - 1]] = value;
+}
+function getDeep(obj, path) {
+  return path.split(".").reduce((cur, k) => (cur == null ? cur : cur[k]), obj);
+}
+
+function safeCreateIcons() {
+  if (window.lucide && typeof window.lucide.createIcons === "function") {
+    try { window.lucide.createIcons(); } catch (err) { console.error("lucide icon render failed", err); }
+  }
+}
+
+// Strip a leading zero like "03" -> "3", but keep decimals like "0.5" intact — matches
+// the original NumInput's own live-typing normalization.
+function stripLeadingZero(raw) {
+  return raw.replace(/^0+(?=\d)/, "");
+}
+
+// ============================================================
+// ---------- scenario factory + presets ----------
+// ============================================================
+function makeScenario(name, color, overrides = {}) {
+  return {
+    id: uid(),
+    name,
+    color,
+    hidden: false,
+    rent: { amount: 0, growthPct: 6, periodMonths: 12 },
+    housingBudget: { amount: 0, growthPct: 0, periodMonths: 12 },
+    bonus: { amount: 0, periodMonths: 12 },
+    oneTimeCost: { amount: 0 },
+    stage1: {
+      enabled: true,
+      investReturnPct: 0,
+      initialCash: 0,
+      endMode: "target",
+      durationMonths: 36,
+      targetPercent: 30,
+    },
+    stage2: {
+      enabled: false,
+      interestRatePreferential: 6,
+      interestRateStandard: 16,
+      loanTermYears: 30,
+      initialDownPayment: 0,
+      handoverMode: "immediate",
+      handoverMonth: 24,
+    },
+    ...overrides,
+  };
+}
+
+const SCENARIO_PRESETS = [
+  {
+    key: "blank",
+    labelKey: "presetBlankLabel",
+    descKey: "presetBlankDesc",
+    build: (name, color) => makeScenario(name, color),
+  },
+  {
+    key: "cash",
+    labelKey: "presetCashLabel",
+    descKey: "presetCashDesc",
+    build: (name, color) =>
+      makeScenario(name, color, {
+        rent: { amount: 1500, growthPct: 6, periodMonths: 12 },
+        housingBudget: { amount: 3000, growthPct: 3, periodMonths: 12 },
+        stage1: { enabled: true, investReturnPct: 5, initialCash: 0, endMode: "months", durationMonths: 36, targetPercent: 30 },
+        stage2: { enabled: false, interestRatePreferential: 6, interestRateStandard: 16, loanTermYears: 30, initialDownPayment: 0, handoverMode: "immediate", handoverMonth: 24 },
+      }),
+  },
+  {
+    key: "mortgage-now",
+    labelKey: "presetMortgageLabel",
+    descKey: "presetMortgageDesc",
+    build: (name, color) =>
+      makeScenario(name, color, {
+        rent: { amount: 1500, growthPct: 6, periodMonths: 12 },
+        housingBudget: { amount: 2500, growthPct: 3, periodMonths: 12 },
+        stage1: { enabled: false, investReturnPct: 0, initialCash: 0, endMode: "months", durationMonths: 36, targetPercent: 30 },
+        stage2: { enabled: true, interestRatePreferential: 6, interestRateStandard: 16, loanTermYears: 30, initialDownPayment: 50000, handoverMode: "manual", handoverMonth: 18 },
+      }),
+  },
+  {
+    key: "save-then-mortgage",
+    labelKey: "presetSaveThenLabel",
+    descKey: "presetSaveThenDesc",
+    build: (name, color) =>
+      makeScenario(name, color, {
+        rent: { amount: 1500, growthPct: 6, periodMonths: 12 },
+        housingBudget: { amount: 3000, growthPct: 4, periodMonths: 12 },
+        stage1: { enabled: true, investReturnPct: 6, initialCash: 0, endMode: "target", durationMonths: 36, targetPercent: 20 },
+        stage2: { enabled: true, interestRatePreferential: 6, interestRateStandard: 16, loanTermYears: 30, initialDownPayment: 0, handoverMode: "immediate", handoverMonth: 24 },
+      }),
+  },
+];
+
+// ============================================================
+// ---------- simulation ----------
+// ============================================================
+function simulateScenario(scenario, global, currencySymbol, lang) {
+  const symbol = currencySymbol === undefined ? "₽" : currencySymbol;
+  const horizonMonths = Math.round(global.horizonYears * 12);
+  const priceMonthlyRate = monthlyRateFromAnnual(global.inflationPct);
+  const priceAt = (m) => global.price0 * Math.pow(1 + priceMonthlyRate, m);
+  const rentAt = (m) => {
+    if (!scenario.rent.amount) return 0;
+    const period = Math.max(1, scenario.rent.periodMonths);
+    const steps = Math.floor(m / period);
+    return scenario.rent.amount * Math.pow(1 + scenario.rent.growthPct / 100, steps);
+  };
+
+  const s1 = scenario.stage1, s2 = scenario.stage2;
+  const budgetGrowthPct = scenario.housingBudget?.growthPct || 0;
+  const budgetGrowthPeriod = Math.max(1, scenario.housingBudget?.periodMonths || 12);
+  const housingBudgetAt = (m) =>
+    (scenario.housingBudget?.amount || 0) * Math.pow(1 + budgetGrowthPct / 100, Math.floor(m / budgetGrowthPeriod));
+  const bonusPeriod = Math.max(1, scenario.bonus?.periodMonths || 12);
+  const bonusAt = (m) => {
+    const amt = scenario.bonus?.amount || 0;
+    if (!amt || m === 0 || m % bonusPeriod !== 0) return 0;
+    return amt * Math.pow(1 + budgetGrowthPct / 100, Math.floor(m / budgetGrowthPeriod));
+  };
+  const oneTimeCostAmount = scenario.oneTimeCost?.amount || 0;
+
+  let phase = s1.enabled ? "saving" : "mortgage";
+  let capital = s1.enabled ? (s1.initialCash || 0) : 0;
+  let loanBalance = 0, purchasePriceAtStart = 0, downPaymentUsed = 0, mortgageStartMonth = null;
+  const termMonthsTotal = Math.max(1, Math.round((s2.loanTermYears || 30) * 12));
+  let requiredPayment = 0, requiredPaymentPre = null, requiredPaymentPost = null, handoverRateApplied = false;
+  let oneTimeCostPaid = 0;
+
+  if (!s1.enabled && s2.enabled) {
+    purchasePriceAtStart = priceAt(0);
+    downPaymentUsed = s2.initialDownPayment || 0;
+    loanBalance = Math.max(0, purchasePriceAtStart - downPaymentUsed);
+    mortgageStartMonth = 0;
+    requiredPayment = annuityPayment(loanBalance, monthlyRateFromAnnual(s2.interestRatePreferential), termMonthsTotal);
+    requiredPaymentPre = requiredPayment;
+    oneTimeCostPaid = oneTimeCostAmount;
+  }
+
+  let resolvedHandover = null;
+  if (!s1.enabled && s2.enabled) {
+    resolvedHandover = s2.handoverMode === "manual" ? (s2.handoverMonth || 0) : 0;
+  }
+
+  let rentPaidCum = 0, mortgagePaidCum = 0, interestPaidCum = 0, principalPaidCum = 0, savingsContributedCum = 0;
+  let goalReached = false, goalMonth = null, purchaseMonth = null, invalidReason = null;
+  let movedInMonthActual = null;
+  let cashPurchasePrice = null;
+
+  const data = [];
+  const investMonthlyRate = monthlyRateFromAnnual(s1.investReturnPct || 0);
+
+  for (let m = 0; m <= horizonMonths; m++) {
+    const currentPrice = priceAt(m);
+
+    // If we're still saving but already have enough for the down payment, close the mortgage
+    // right at the start of this month — before any rent gets charged for it.
+    if (!goalReached && phase === "saving" && s2.enabled) {
+      let transitionNow = false;
+      if (s1.endMode === "months") {
+        if (m >= s1.durationMonths) transitionNow = true;
+      } else {
+        if (capital >= (s1.targetPercent / 100) * currentPrice) transitionNow = true;
+      }
+      if (transitionNow) {
+        downPaymentUsed = capital;
+        purchasePriceAtStart = currentPrice;
+        loanBalance = Math.max(0, purchasePriceAtStart - downPaymentUsed);
+        mortgageStartMonth = m;
+        phase = "mortgage";
+        resolvedHandover = s2.handoverMode === "manual" ? mortgageStartMonth + (s2.handoverMonth || 0) : mortgageStartMonth;
+        requiredPayment = annuityPayment(loanBalance, monthlyRateFromAnnual(s2.interestRatePreferential), termMonthsTotal);
+        requiredPaymentPre = requiredPayment;
+        oneTimeCostPaid = oneTimeCostAmount;
+      }
+    }
+
+    const movedIn = resolvedHandover !== null && m >= resolvedHandover;
+    if (movedIn && movedInMonthActual === null) movedInMonthActual = m;
+
+    let rentPay = 0, paymentThisMonth = 0, contributionThisMonth = 0, interestThisMonth = 0, principalThisMonth = 0;
+
+    if (!goalReached) {
+      rentPay = movedIn ? 0 : rentAt(m);
+      rentPaidCum += rentPay;
+      const availableForHousing = Math.max(0, housingBudgetAt(m) + bonusAt(m) - rentPay);
+
+      if (phase === "saving") {
+        contributionThisMonth = availableForHousing;
+        capital = capital * (1 + investMonthlyRate) + contributionThisMonth;
+        savingsContributedCum += contributionThisMonth;
+
+        if (!s2.enabled) {
+          if (capital >= currentPrice) {
+            goalReached = true; goalMonth = m; purchaseMonth = m;
+            cashPurchasePrice = currentPrice;
+            oneTimeCostPaid = oneTimeCostAmount;
+            if (resolvedHandover === null) resolvedHandover = m;
+            if (movedInMonthActual === null) movedInMonthActual = m;
+          }
+        }
+      } else if (phase === "mortgage") {
+        const movedInNow = resolvedHandover !== null && m >= resolvedHandover;
+
+        if (movedInNow && !handoverRateApplied) {
+          const elapsed = m - mortgageStartMonth;
+          const remainingTermMonths = Math.max(1, termMonthsTotal - elapsed);
+          requiredPayment = annuityPayment(loanBalance, monthlyRateFromAnnual(s2.interestRateStandard), remainingTermMonths);
+          requiredPaymentPost = requiredPayment;
+          handoverRateApplied = true;
+        }
+
+        const activeMonthlyRate = monthlyRateFromAnnual(movedInNow ? s2.interestRateStandard : s2.interestRatePreferential);
+        const actualPayment = availableForHousing;
+
+        const interest = loanBalance * activeMonthlyRate;
+        if (actualPayment < requiredPayment - 0.5 && loanBalance > 0.5) {
+          invalidReason = lang === "ru"
+            ? `Бюджета на жильё не хватает: сейчас на кредит остаётся ${rub(actualPayment, symbol)}, а обязательный платёж банку — ${rub(requiredPayment, symbol)}/мес при сроке кредита ${s2.loanTermYears} лет. Увеличьте бюджет на жильё, срок кредита или первоначальный взнос.`
+            : `The housing budget is not enough: right now ${rub(actualPayment, symbol)} is left for the loan, but the required bank payment is ${rub(requiredPayment, symbol)}/mo over a ${s2.loanTermYears}-year term. Increase the housing budget, the loan term, or the down payment.`;
+        }
+        let principal = actualPayment - interest;
+        principal = Math.max(0, Math.min(principal, loanBalance));
+        loanBalance -= principal;
+        paymentThisMonth = interest + principal;
+        interestThisMonth = interest;
+        principalThisMonth = principal;
+        interestPaidCum += interest;
+        principalPaidCum += principal;
+        mortgagePaidCum += interest + principal;
+        if (loanBalance <= 1) {
+          goalReached = true; goalMonth = m;
+          if (purchaseMonth === null) purchaseMonth = mortgageStartMonth;
+        }
+      }
+    }
+
+    let progressPct, capitalValue;
+    if (goalReached) {
+      progressPct = 100;
+      capitalValue = phase === "mortgage" ? purchasePriceAtStart : currentPrice;
+    } else if (phase === "saving") {
+      capitalValue = capital;
+      progressPct = Math.min(100, (capital / currentPrice) * 100);
+    } else {
+      capitalValue = downPaymentUsed + principalPaidCum;
+      progressPct = Math.min(100, (capitalValue / purchasePriceAtStart) * 100);
+    }
+
+    const outflow = goalReached ? 0 : rentPay + contributionThisMonth + paymentThisMonth;
+    const rowPhase = goalReached ? "done" : paymentThisMonth > 0 ? "mortgage" : contributionThisMonth > 0 ? "saving" : phase;
+
+    data.push({
+      month: m,
+      years: +(m / 12).toFixed(3),
+      price: currentPrice,
+      progressPct: +progressPct.toFixed(2),
+      capitalValue,
+      rentCum: rentPaidCum,
+      mortgageCum: mortgagePaidCum,
+      interestCum: interestPaidCum,
+      principalCum: principalPaidCum,
+      savingsCum: savingsContributedCum,
+      movedIn,
+      phase: rowPhase,
+      outflow,
+      rentMonth: goalReached ? 0 : rentPay,
+      contributionMonth: goalReached ? 0 : contributionThisMonth,
+      interestMonth: goalReached ? 0 : interestThisMonth,
+      principalMonth: goalReached ? 0 : principalThisMonth,
+    });
+
+    if (goalReached && m > (goalMonth ?? 0) + 1 && invalidReason === null) {
+      for (let mm = m + 1; mm <= horizonMonths; mm++) {
+        data.push({
+          month: mm, years: +(mm / 12).toFixed(3), price: priceAt(mm),
+          progressPct: 100, capitalValue, rentCum: rentPaidCum, mortgageCum: mortgagePaidCum,
+          interestCum: interestPaidCum, principalCum: principalPaidCum, savingsCum: savingsContributedCum,
+          movedIn: true, phase: "done", outflow: 0,
+          rentMonth: 0, contributionMonth: 0, interestMonth: 0, principalMonth: 0,
+        });
+      }
+      break;
+    }
+    if (invalidReason) break;
+  }
+
+  return {
+    data,
+    goalMonth,
+    movedInMonth: movedInMonthActual,
+    reached: goalReached,
+    horizonMonths,
+    invalidReason,
+    requiredPaymentPre,
+    requiredPaymentPost,
+    totals: {
+      rentPaid: rentPaidCum,
+      mortgagePaid: mortgagePaidCum,
+      interestPaid: interestPaidCum,
+      principalPaid: principalPaidCum,
+      savingsContributed: savingsContributedCum,
+      downPaymentUsed,
+      cashPurchasePrice,
+      oneTimeCostPaid,
+      loanTaken: purchasePriceAtStart ? Math.max(0, purchasePriceAtStart - downPaymentUsed) : 0,
+    },
+  };
+}
+
+// Builds tick positions landing exactly on whole months (in "years" units, the chart's
+// numeric domain), instead of letting an axis pick "nice" values that round unevenly
+// once converted to months.
+function computeMonthTicks(horizonYears) {
+  const totalMonths = Math.max(1, Math.round(horizonYears * 12));
+  const stepCandidates = [1, 2, 3, 4, 6, 12, 24, 36, 60, 120, 240];
+  let step = stepCandidates[stepCandidates.length - 1];
+  for (const c of stepCandidates) {
+    if (Math.floor(totalMonths / c) + 1 <= 14) { step = c; break; }
+  }
+  const ticks = [];
+  for (let m = 0; m <= totalMonths; m += step) ticks.push(m / 12);
+  if (ticks[ticks.length - 1] * 12 < totalMonths) ticks.push(totalMonths / 12);
+  return ticks;
+}
+// ============================================================
+// ---------- state ----------
+// ============================================================
+const state = {
+  global: { price0: 0, inflationPct: 7, horizonYears: 40 },
+  scenarios: [],
+  theme: "dark",
+  currency: "$",
+  language: "ru",
+  tab: "progress",
+  progressMode: "percent",
+  detailId: null,
+  importError: null,
+};
+const collapsedCards = new Set();
+let sims = {};
+const charts = { progress: null, outflow: null, detail: null, spend: null };
+
+function detectPreferredTheme() {
+  try {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  } catch (err) {
+    return "dark";
+  }
+}
+
+function recomputeSims() {
+  sims = {};
+  state.scenarios.forEach((s) => { sims[s.id] = simulateScenario(s, state.global, state.currency, state.language); });
+}
+
+function visibleScenarios() {
+  return state.scenarios.filter((s) => !s.hidden);
+}
+
+function activeDetailScenario() {
+  if (state.detailId && state.scenarios.some((s) => s.id === state.detailId)) {
+    return state.scenarios.find((s) => s.id === state.detailId);
+  }
+  return state.scenarios[0] || null;
+}
+
+// ============================================================
+// ---------- HTML builders (pure string functions) ----------
+// ============================================================
+function iconHtml(name, size) {
+  return `<i data-lucide="${name}" style="width:${size}px;height:${size}px"></i>`;
+}
+
+// Mirrors the original NumInput's UX: an underlying value of 0/null/undefined displays as an
+// empty field (with a "0" placeholder) rather than a literal 0, and a live "error" state can
+// highlight the field with an inline message.
+function numInputHtml({ label, field, value, suffix, step = 1, min, hint, error, errorMessage }) {
+  const errMsg = errorMessage !== undefined ? errorMessage : t(state.language, "fillField");
+  const displayValue = value === 0 || value === undefined || value === null ? "" : String(value);
+  const stepAttr = step !== undefined && step !== null ? ` step="${step}"` : "";
+  const minAttr = min !== undefined && min !== null ? ` min="${min}"` : "";
+  return `
+    <label class="np-field">
+      <span class="np-field-label">${escapeHtml(label)}</span>
+      <div class="np-field-input-wrap">
+        <input type="number" class="np-input${error ? " np-input-error" : ""}" data-field="${escapeHtml(field)}" value="${escapeHtml(displayValue)}" placeholder="0"${stepAttr}${minAttr} />
+        ${suffix ? `<span class="np-suffix">${escapeHtml(suffix)}</span>` : ""}
+      </div>
+      ${hint ? `<span class="np-hint">${escapeHtml(hint)}</span>` : ""}
+      <span class="np-hint np-hint-error" data-error-hint="${escapeHtml(field)}"${error ? "" : ' style="display:none"'}>${escapeHtml(errMsg)}</span>
+    </label>`;
+}
+
+function toggleHtml({ toggleField, checked, label }) {
+  return `
+    <label class="np-toggle">
+      <input type="checkbox" data-toggle="${toggleField}" ${checked ? "checked" : ""} />
+      <span class="np-toggle-track"><span class="np-toggle-thumb"></span></span>
+      <span class="np-toggle-label">${escapeHtml(label)}</span>
+    </label>`;
+}
+
+function addMenuHtml() {
+  const lang = state.language;
+  return `
+    <div class="np-add-menu-wrap" data-add-menu>
+      <button class="np-addbtn" data-action="toggle-add-menu" type="button">${iconHtml("plus", 15)} ${escapeHtml(t(lang, "addScenario"))}</button>
+      <div class="np-add-menu">
+        ${SCENARIO_PRESETS.map((p) => `
+          <button class="np-add-menu-item" data-action="add-scenario" data-preset-key="${escapeHtml(p.key)}" type="button">
+            <span class="np-add-menu-item-label">${escapeHtml(t(lang, p.labelKey))}</span>
+            <span class="np-add-menu-item-desc">${escapeHtml(t(lang, p.descKey))}</span>
+          </button>`).join("")}
+      </div>
+    </div>`;
+}
+
+function renderCardHtml(scenario, index, total) {
+  const s1 = scenario.stage1, s2 = scenario.stage2;
+  const isOpen = !collapsedCards.has(scenario.id);
+  const currency = state.currency;
+  const lang = state.language;
+  const tr = (key) => t(lang, key);
+  const bothOff = !s1.enabled && !s2.enabled;
+  const budgetMissing = !scenario.housingBudget?.amount;
+  const downPaymentMissing = !s1.enabled && s2.enabled && !s2.initialDownPayment;
+  const sim = sims[scenario.id];
+
+  return `
+  <div class="np-card${scenario.hidden ? " np-card-hidden" : ""}" style="--accent:${scenario.color}" data-scenario-id="${scenario.id}">
+    <div class="np-card-head">
+      <label class="np-color-picker" title="${escapeHtml(tr("chooseColor"))}">
+        <span class="np-dot" style="background:${scenario.color}"></span>
+        <input type="color" data-field="color" value="${scenario.color}" />
+      </label>
+      <input class="np-name-input" type="text" data-field="name" value="${escapeHtml(scenario.name)}" />
+      <div class="np-card-actions">
+        <button class="np-iconbtn" data-action="toggle-hidden" title="${escapeHtml(scenario.hidden ? tr("showInAnalytics") : tr("hideFromAnalytics"))}">${iconHtml(scenario.hidden ? "eye-off" : "eye", 15)}</button>
+        <button class="np-iconbtn" data-action="move-up" title="${escapeHtml(tr("moveUp"))}" ${index === 0 ? "disabled" : ""}>${iconHtml("arrow-up", 15)}</button>
+        <button class="np-iconbtn" data-action="move-down" title="${escapeHtml(tr("moveDown"))}" ${index === total - 1 ? "disabled" : ""}>${iconHtml("arrow-down", 15)}</button>
+        <button class="np-iconbtn" data-action="duplicate-scenario" title="${escapeHtml(tr("duplicate"))}">${iconHtml("copy", 15)}</button>
+        <button class="np-iconbtn" data-action="remove-scenario" title="${escapeHtml(tr("deleteLabel"))}">${iconHtml("trash-2", 15)}</button>
+        <button class="np-iconbtn" data-action="toggle-open">${iconHtml(isOpen ? "chevron-up" : "chevron-down", 15)}</button>
+      </div>
+    </div>
+
+    <div class="np-card-summary" id="summary-${scenario.id}"></div>
+
+    <div class="np-card-body${isOpen ? "" : " hidden"}" id="body-${scenario.id}">
+      <div id="warnings-${scenario.id}"></div>
+
+      <div class="np-section-title">${iconHtml("trending-up", 13)} ${escapeHtml(tr("housingBudgetTitle"))}</div>
+      <div class="np-grid3">
+        ${numInputHtml({ label: tr("totalPerMonth"), field: "housingBudget.amount", value: scenario.housingBudget.amount, suffix: currency, step: 1000, min: 0, hint: tr("rentPlusHint"), error: budgetMissing })}
+        ${numInputHtml({ label: tr("budgetGrowth"), field: "housingBudget.growthPct", value: scenario.housingBudget.growthPct, suffix: "%", step: 0.5 })}
+        ${numInputHtml({ label: tr("growsEvery"), field: "housingBudget.periodMonths", value: scenario.housingBudget.periodMonths, suffix: tr("unitMo"), min: 1 })}
+      </div>
+      <div class="np-hint-block" id="budget-hint-${scenario.id}"></div>
+      <div class="np-grid3" style="margin-top:10px">
+        ${numInputHtml({ label: tr("occasionalBonus"), field: "bonus.amount", value: scenario.bonus.amount, suffix: currency, step: 10000, min: 0, hint: tr("bonusHint") })}
+        ${numInputHtml({ label: tr("everyLabel"), field: "bonus.periodMonths", value: scenario.bonus.periodMonths, suffix: tr("unitMo"), min: 1 })}
+        ${numInputHtml({ label: tr("oneTimeCostLabel"), field: "oneTimeCost.amount", value: scenario.oneTimeCost.amount, suffix: currency, step: 10000, min: 0, hint: tr("oneTimeCostHint") })}
+      </div>
+
+      <div class="np-section-title">${iconHtml("home", 13)} ${escapeHtml(tr("rentSectionTitle"))}</div>
+      <div class="np-grid3">
+        ${numInputHtml({ label: `${tr("rentLabel")}, ${currency || "units"}${tr("perMonthShort")}`, field: "rent.amount", value: scenario.rent.amount, suffix: currency, step: 1000, min: 0 })}
+        ${numInputHtml({ label: tr("rentIndexation"), field: "rent.growthPct", value: scenario.rent.growthPct, suffix: "%", step: 0.5 })}
+        ${numInputHtml({ label: tr("everyLabel"), field: "rent.periodMonths", value: scenario.rent.periodMonths, suffix: tr("unitMo"), min: 1 })}
+      </div>
+
+      <div class="np-stage">
+        <div class="np-section-title">
+          ${iconHtml("wallet", 13)} ${escapeHtml(tr("stage1Title"))}
+          ${toggleHtml({ toggleField: "stage1.enabled", checked: s1.enabled, label: s1.enabled ? tr("onLabel") : tr("offLabel") })}
+        </div>
+        ${s1.enabled ? `
+          <div class="np-grid3">
+            ${numInputHtml({ label: tr("alreadySaved"), field: "stage1.initialCash", value: s1.initialCash, suffix: currency, step: 10000, min: 0 })}
+            ${numInputHtml({ label: tr("depositReturn"), field: "stage1.investReturnPct", value: s1.investReturnPct, suffix: "%/yr", step: 0.5 })}
+          </div>
+          <div class="np-hint-block">${escapeHtml(tr("savingsContribHint"))}</div>
+          ${s2.enabled ? `
+            <div class="np-subrow">
+              <div class="np-radio-group">
+                <label class="np-radio${s1.endMode === "months" ? " active" : ""}"><input type="radio" name="endMode-${scenario.id}" data-radio="stage1.endMode" value="months" ${s1.endMode === "months" ? "checked" : ""} /> ${escapeHtml(tr("saveFixedTerm"))}</label>
+                <label class="np-radio${s1.endMode === "target" ? " active" : ""}"><input type="radio" name="endMode-${scenario.id}" data-radio="stage1.endMode" value="target" ${s1.endMode === "target" ? "checked" : ""} /> ${escapeHtml(tr("saveUntilPercent"))}</label>
+              </div>
+              ${s1.endMode === "months"
+                ? numInputHtml({ label: tr("savingsTerm"), field: "stage1.durationMonths", value: s1.durationMonths, suffix: tr("unitMo"), min: 1 })
+                : numInputHtml({ label: tr("targetPercentLabel"), field: "stage1.targetPercent", value: s1.targetPercent, suffix: "%", step: 1, min: 0, hint: tr("targetPercentHint") })}
+            </div>` : `<div class="np-hint-block">${escapeHtml(tr("savingUpFullHint"))}</div>`}
+        ` : ""}
+      </div>
+
+      <div class="np-stage">
+        <div class="np-section-title">
+          ${iconHtml("landmark", 13)} ${escapeHtml(tr("stage2Title"))}
+          ${toggleHtml({ toggleField: "stage2.enabled", checked: s2.enabled, label: s2.enabled ? tr("onLabel") : tr("offLabel") })}
+        </div>
+        ${s2.enabled ? `
+          <div class="np-grid3">
+            ${!s1.enabled ? numInputHtml({ label: tr("downPaymentOwn"), field: "stage2.initialDownPayment", value: s2.initialDownPayment, suffix: currency, step: 50000, min: 0, error: downPaymentMissing }) : ""}
+            ${numInputHtml({ label: tr("loanTerm"), field: "stage2.loanTermYears", value: s2.loanTermYears, suffix: tr("unitYr"), min: 1, hint: tr("loanTermHint") })}
+            ${numInputHtml({ label: tr("ratePref"), field: "stage2.interestRatePreferential", value: s2.interestRatePreferential, suffix: "%/yr", step: 0.25 })}
+            ${numInputHtml({ label: tr("rateStandard"), field: "stage2.interestRateStandard", value: s2.interestRateStandard, suffix: "%/yr", step: 0.25 })}
+          </div>
+          <div class="np-hint-block" id="mortgage-hint-${scenario.id}"></div>
+          <div class="np-subrow">
+            <div class="np-radio-group">
+              <label class="np-radio${s2.handoverMode === "immediate" ? " active" : ""}"><input type="radio" name="handoverMode-${scenario.id}" data-radio="stage2.handoverMode" value="immediate" ${s2.handoverMode === "immediate" ? "checked" : ""} /> ${escapeHtml(tr("moveInImmediately"))}</label>
+              <label class="np-radio${s2.handoverMode === "manual" ? " active" : ""}"><input type="radio" name="handoverMode-${scenario.id}" data-radio="stage2.handoverMode" value="manual" ${s2.handoverMode === "manual" ? "checked" : ""} /> ${escapeHtml(tr("buildingHandedLater"))}</label>
+            </div>
+            ${s2.handoverMode === "manual" ? numInputHtml({ label: tr("handoverLabel"), field: "stage2.handoverMonth", value: s2.handoverMonth, suffix: tr("unitMo"), min: 0, hint: tr("handoverHint") }) : ""}
+          </div>` : ""}
+      </div>
+    </div>
+  </div>`;
+}
+// ============================================================
+// ---------- theme ----------
+// ============================================================
+function themeColors() {
+  const root = document.getElementById("app-root");
+  const cs = getComputedStyle(root);
+  const get = (name) => cs.getPropertyValue(name).trim();
+  return {
+    text: get("--text"), muted: get("--muted"), axis: get("--axis"), grid: get("--grid"),
+    line: get("--line"), panel: get("--panel"), panel2: get("--panel2"), inputBg: get("--input-bg"),
+    ok: get("--ok"), warn: get("--warn"), danger: get("--danger"),
+  };
+}
+
+function applyTheme() {
+  const root = document.getElementById("app-root");
+  root.setAttribute("data-theme", state.theme);
+  const btn = document.getElementById("theme-toggle-btn");
+  if (btn) {
+    btn.title = state.theme === "dark" ? t(state.language, "lightTheme") : t(state.language, "darkTheme");
+    btn.innerHTML = iconHtml(state.theme === "dark" ? "sun" : "moon", 16);
+    safeCreateIcons();
+  }
+}
+
+function toggleTheme() {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  applyTheme();
+  // Theme changes the resolved color of anything Chart.js drew onto <canvas> (axis ticks,
+  // grid lines, tooltip chrome, the muted "target price" line) — those are baked pixels,
+  // not CSS, so the cleanest correct fix is to rebuild the chart instances for the current
+  // tab rather than trying to patch every color reference in place.
+  destroyAllCharts();
+  switchTab(state.tab);
+}
+
+function destroyAllCharts() {
+  Object.keys(charts).forEach((k) => {
+    if (charts[k]) { try { charts[k].destroy(); } catch (err) { /* ignore */ } charts[k] = null; }
+  });
+}
+
+// ============================================================
+// ---------- goalbar / header ----------
+// ============================================================
+function renderGoalbar() {
+  const el = document.getElementById("goalbar-fields");
+  const lang = state.language;
+  el.innerHTML =
+    numInputHtml({ label: t(lang, "priceToday"), field: "price0", value: state.global.price0, suffix: state.currency, step: 100000, min: 0, error: !state.global.price0 }) +
+    numInputHtml({ label: t(lang, "priceGrowth"), field: "inflationPct", value: state.global.inflationPct, suffix: "%/yr", step: 0.5 }) +
+    numInputHtml({ label: t(lang, "horizon"), field: "horizonYears", value: state.global.horizonYears, suffix: t(lang, "unitYr"), min: 1 });
+}
+
+function syncGoalbarInputs() {
+  ["price0", "inflationPct", "horizonYears"].forEach((f) => {
+    const input = document.querySelector(`#goalbar-fields [data-field="${f}"]`);
+    if (!input) return;
+    const v = state.global[f];
+    input.value = v === 0 || v == null ? "" : String(v);
+  });
+  updateGoalbarErrors();
+}
+
+function updateGoalbarErrors() {
+  const priceInput = document.querySelector('#goalbar-fields [data-field="price0"]');
+  const priceErrorHint = document.querySelector('#goalbar-fields [data-error-hint="price0"]');
+  const missing = !state.global.price0;
+  if (priceInput) priceInput.classList.toggle("np-input-error", missing);
+  if (priceErrorHint) priceErrorHint.style.display = missing ? "" : "none";
+}
+
+function renderCurrencySelect() {
+  const el = document.getElementById("currency-select");
+  el.innerHTML = CURRENCY_OPTIONS.map((c) => `<option value="${escapeHtml(c.value)}"${c.value === state.currency ? " selected" : ""}>${escapeHtml(c.label)}</option>`).join("");
+  el.title = t(state.language, "currencyTitle");
+}
+
+function renderLanguageSelect() {
+  const el = document.getElementById("language-select");
+  el.innerHTML = LANGUAGE_OPTIONS.map((l) => `<option value="${escapeHtml(l.value)}"${l.value === state.language ? " selected" : ""}>${escapeHtml(l.label)}</option>`).join("");
+  el.title = t(state.language, "languageTitle");
+}
+
+// Re-labels/re-suffixes every currency-denominated field in place (no card rebuild, so focus
+// and scroll position are undisturbed) whenever the display currency changes.
+function refreshCurrencySuffixes() {
+  document.querySelectorAll('[data-field="price0"]').forEach((input) => {
+    const wrap = input.closest(".np-field-input-wrap");
+    const suffixEl = wrap?.querySelector(".np-suffix");
+    if (suffixEl) suffixEl.textContent = state.currency;
+  });
+  const currencyFields = ["housingBudget.amount", "bonus.amount", "oneTimeCost.amount", "rent.amount", "stage1.initialCash", "stage2.initialDownPayment"];
+  document.querySelectorAll(".np-card").forEach((card) => {
+    currencyFields.forEach((f) => {
+      const input = card.querySelector(`[data-field="${f}"]`);
+      const suffixEl = input?.closest(".np-field-input-wrap")?.querySelector(".np-suffix");
+      if (suffixEl) suffixEl.textContent = state.currency;
+    });
+    const rentLabel = card.querySelector('[data-field="rent.amount"]')?.closest(".np-field")?.querySelector(".np-field-label");
+    if (rentLabel) rentLabel.textContent = `${t(state.language, "rentLabel")}, ${state.currency || "units"}${t(state.language, "perMonthShort")}`;
+  });
+}
+
+// ============================================================
+// ---------- scenario list / cards ----------
+// ============================================================
+function updateScenarioCountHeading() {
+  const el = document.getElementById("scenario-count-heading");
+  if (el) el.textContent = `${t(state.language, "scenarios")} (${state.scenarios.length})`;
+}
+
+function updateEmptyState() {
+  const el = document.getElementById("empty-state-container");
+  if (!el) return;
+  el.classList.toggle("hidden", state.scenarios.length !== 0);
+}
+
+function renderAllCards() {
+  const container = document.getElementById("cards-container");
+  container.innerHTML = state.scenarios.map((s, i) => renderCardHtml(s, i, state.scenarios.length)).join("");
+  safeCreateIcons();
+  updateAllCardsComputed();
+  updateEmptyState();
+}
+
+function rebuildSingleCard(id) {
+  const idx = state.scenarios.findIndex((s) => s.id === id);
+  if (idx === -1) return;
+  const scenario = state.scenarios[idx];
+  const el = document.querySelector(`.np-card[data-scenario-id="${id}"]`);
+  if (el) el.outerHTML = renderCardHtml(scenario, idx, state.scenarios.length);
+  safeCreateIcons();
+}
+
+function updateCardComputed(scenario) {
+  const sim = sims[scenario.id];
+  const s1 = scenario.stage1, s2 = scenario.stage2;
+  const lang = state.language;
+  const bothOff = !s1.enabled && !s2.enabled;
+  const budgetMissing = !scenario.housingBudget?.amount;
+  const downPaymentMissing = !s1.enabled && s2.enabled && !s2.initialDownPayment;
+
+  const summaryEl = document.getElementById(`summary-${scenario.id}`);
+  if (summaryEl) {
+    summaryEl.innerHTML = sim ? `
+      ${scenario.hidden ? `<span class="np-badge np-badge-muted">${iconHtml("eye-off", 11)}${escapeHtml(t(lang, "hiddenFromAnalytics"))}</span>` : ""}
+      <span class="np-badge ${sim.reached ? "np-badge-ok" : "np-badge-warn"}">${sim.invalidReason ? escapeHtml(t(lang, "calcError")) : sim.reached ? `${escapeHtml(t(lang, "goalLabel"))}: ${escapeHtml(monthsToYM(sim.goalMonth, lang))}` : escapeHtml(t(lang, "notReachedInTime"))}</span>
+      ${sim.movedInMonth !== null ? `<span class="np-badge np-badge-muted">${escapeHtml(t(lang, "moveInLabel"))}: ${escapeHtml(monthsToYM(sim.movedInMonth, lang))}</span>` : ""}
+    ` : "";
+  }
+
+  const warnEl = document.getElementById(`warnings-${scenario.id}`);
+  if (warnEl) {
+    let html = "";
+    if (bothOff) html += `<div class="np-warning">${iconHtml("alert-triangle", 14)} ${escapeHtml(t(lang, "enableStageWarning"))}</div>`;
+    if (budgetMissing) html += `<div class="np-warning">${iconHtml("alert-triangle", 14)} ${escapeHtml(t(lang, "fillBudgetWarning"))}</div>`;
+    if (downPaymentMissing) html += `<div class="np-warning">${iconHtml("alert-triangle", 14)} ${escapeHtml(t(lang, "enterDownPaymentWarning"))}</div>`;
+    if (sim?.invalidReason) html += `<div class="np-warning">${iconHtml("alert-triangle", 14)} ${escapeHtml(sim.invalidReason)}</div>`;
+    warnEl.innerHTML = html;
+  }
+
+  const cardEl = document.querySelector(`.np-card[data-scenario-id="${scenario.id}"]`);
+  if (cardEl) {
+    const budgetInput = cardEl.querySelector('[data-field="housingBudget.amount"]');
+    const budgetErrorHint = cardEl.querySelector('[data-error-hint="housingBudget.amount"]');
+    if (budgetInput) budgetInput.classList.toggle("np-input-error", budgetMissing);
+    if (budgetErrorHint) budgetErrorHint.style.display = budgetMissing ? "" : "none";
+
+    const downInput = cardEl.querySelector('[data-field="stage2.initialDownPayment"]');
+    const downErrorHint = cardEl.querySelector('[data-error-hint="stage2.initialDownPayment"]');
+    if (downInput) downInput.classList.toggle("np-input-error", downPaymentMissing);
+    if (downErrorHint) downErrorHint.style.display = downPaymentMissing ? "" : "none";
+  }
+
+  const budgetHintEl = document.getElementById(`budget-hint-${scenario.id}`);
+  if (budgetHintEl) {
+    const leftover = Math.max(0, (scenario.housingBudget.amount || 0) - (scenario.rent.amount || 0));
+    budgetHintEl.innerHTML = `${escapeHtml(t(lang, "budgetHintBlock"))} ${escapeHtml(t(lang, "currentlyLeftFor"))} ${escapeHtml(rub(leftover, state.currency))}${escapeHtml(t(lang, "perMonthShort"))} (${escapeHtml(t(lang, "afterMovingInFull"))} ${escapeHtml(rub(scenario.housingBudget.amount || 0, state.currency))}).`;
+  }
+
+  const mortgageHintEl = document.getElementById(`mortgage-hint-${scenario.id}`);
+  if (mortgageHintEl) {
+    let html = escapeHtml(t(lang, "paymentFormulaHint"));
+    if (sim?.requiredPaymentPre != null) {
+      html += `<br>${escapeHtml(t(lang, "requiredMinNow"))} ${escapeHtml(rub(sim.requiredPaymentPre, state.currency))}, ${escapeHtml(t(lang, "afterDash"))} ${escapeHtml(rub(sim.requiredPaymentPost ?? sim.requiredPaymentPre, state.currency))}. ${escapeHtml(t(lang, "anythingAboveMin"))}`;
+    }
+    mortgageHintEl.innerHTML = html;
+  }
+
+  safeCreateIcons();
+}
+
+function updateAllCardsComputed() {
+  state.scenarios.forEach(updateCardComputed);
+}
+
+function updateImportError() {
+  const el = document.getElementById("import-error-container");
+  el.innerHTML = state.importError
+    ? `<div class="np-warning" style="margin-bottom:10px">${iconHtml("alert-triangle", 14)} ${escapeHtml(state.importError)}</div>`
+    : "";
+  safeCreateIcons();
+}
+
+// ============================================================
+// ---------- summary table ----------
+// ============================================================
+function updateTable() {
+  const tbody = document.getElementById("summary-tbody");
+  if (!tbody) return;
+  const lang = state.language;
+  tbody.innerHTML = state.scenarios.map((s) => {
+    const sim = sims[s.id];
+    const totals = sim?.totals || {};
+    const propertyOutlay = (totals.downPaymentUsed || 0) + (totals.cashPurchasePrice || 0);
+    const totalPaid = (totals.rentPaid || 0) + propertyOutlay + (totals.principalPaid || 0) + (totals.interestPaid || 0) + (totals.oneTimeCostPaid || 0);
+    const goalCell = sim?.invalidReason ? "—" : sim?.reached ? monthsToYM(sim.goalMonth, lang) : `${t(lang, "notReachedWithin")} ${state.global.horizonYears} ${t(lang, "yearsShort")}`;
+    const goalColor = sim?.reached ? "var(--ok)" : "var(--warn)";
+    return `
+      <tr${s.hidden ? ' style="opacity:0.4"' : ""}>
+        <td><button class="np-scenario-cell np-scenario-cell-btn" data-action="toggle-hidden-table" data-scenario-id="${s.id}" title="${escapeHtml(s.hidden ? t(lang, "showInAnalytics") : t(lang, "hideFromAnalytics"))}">${s.hidden ? iconHtml("eye-off", 13) : `<span class="np-dot" style="background:${s.color}"></span>`}${escapeHtml(s.name)}</button></td>
+        <td style="color:${goalColor}">${escapeHtml(goalCell)}</td>
+        <td>${sim?.movedInMonth != null ? escapeHtml(monthsToYM(sim.movedInMonth, lang)) : "—"}</td>
+        <td>${escapeHtml(rub(totals.rentPaid || 0, state.currency))}</td>
+        <td>${propertyOutlay ? escapeHtml(rub(propertyOutlay, state.currency)) : "—"}</td>
+        <td>${totals.principalPaid ? escapeHtml(rub(totals.principalPaid, state.currency)) : "—"}</td>
+        <td>${totals.interestPaid ? escapeHtml(rub(totals.interestPaid, state.currency)) : "—"}</td>
+        <td>${totals.oneTimeCostPaid ? escapeHtml(rub(totals.oneTimeCostPaid, state.currency)) : "—"}</td>
+        <td style="color:var(--text);font-weight:600">${escapeHtml(rub(totalPaid, state.currency))}</td>
+      </tr>`;
+  }).join("");
+  safeCreateIcons();
+}
+
+function updateTableHeaders() {
+  const lang = state.language;
+  const headers = ["tableScenario", "tableGoalReached", "tableMoveIn", "tableTotalRent", "tablePurchaseDown", "principalLegend", "tableInterestOverpay", "oneTimeCostsLegend", "tableTotalPaid"];
+  document.querySelectorAll("#summary-table thead th").forEach((th, i) => {
+    if (headers[i]) th.textContent = t(lang, headers[i]);
+  });
+}
+
+// Sweeps every static (non-data-driven) piece of chrome: header copy, tab labels, empty
+// state, chart card titles/descriptions, static legends, and element "title" tooltips.
+// Driven by data-i18n / data-i18n-title attributes set on the HTML skeleton, so adding a
+// new translatable static string is just a matter of tagging the element, not touching JS.
+function applyStaticTranslations() {
+  const lang = state.language;
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(lang, el.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.title = t(lang, el.dataset.i18nTitle);
+  });
+  updateTableHeaders();
+}
+// ============================================================
+// ---------- charts ----------
+// ============================================================
+function tooltipBaseStyle() {
+  const c = themeColors();
+  return {
+    backgroundColor: c.inputBg,
+    borderColor: c.line,
+    borderWidth: 1,
+    cornerRadius: 8,
+    padding: 10,
+    titleColor: c.muted,
+    titleFont: { family: "'JetBrains Mono', monospace", size: 11, weight: "normal" },
+    bodyColor: c.text,
+    bodyFont: { family: "Inter, sans-serif", size: 12 },
+    boxPadding: 4,
+    usePointStyle: true,
+  };
+}
+
+function chartJsAvailable() {
+  if (typeof window.Chart === "undefined") {
+    console.error("Chart.js failed to load from CDN — charts will not render, but the rest of the planner still works.");
+    return false;
+  }
+  return true;
+}
+
+function monthAxisTicksConfig() {
+  return {
+    // Computed fresh on every call rather than once at config-build time: Chart.js invokes
+    // afterBuildTicks on every update(), so reading state.global.horizonYears here (instead
+    // of closing over a ticks array computed when the chart was first created) keeps the
+    // axis correct if the horizon changes later without the chart being recreated.
+    afterBuildTicks: (axis) => {
+      const ticks = computeMonthTicks(state.global.horizonYears);
+      axis.ticks = ticks.map((v) => ({ value: v }));
+    },
+    callback: (v) => Math.round(v * 12),
+    font: (ctx) => {
+      const months = Math.round((ctx.tick ? ctx.tick.value : 0) * 12);
+      return { size: 11, weight: months % 12 === 0 ? "bold" : "normal" };
+    },
+  };
+}
+
+// ---- progress chart: data + annotation plugin ----
+const progressAnnotationsPlugin = {
+  id: "progressAnnotations",
+  beforeDatasetsDraw(chart) {
+    const markers = chart.$timeMarkers || [];
+    if (!markers.length) return;
+    const { ctx, chartArea, scales } = chart;
+    ctx.save();
+    ctx.setLineDash([2, 3]);
+    ctx.lineWidth = 1;
+    markers.forEach((m) => {
+      const px = scales.x.getPixelForValue(m.x);
+      if (px < chartArea.left - 1 || px > chartArea.right + 1) return;
+      ctx.strokeStyle = m.color + "59"; // ~0.35 alpha, matching strokeOpacity 0.35
+      ctx.beginPath();
+      ctx.moveTo(px, chartArea.top);
+      ctx.lineTo(px, chartArea.bottom);
+      ctx.stroke();
+    });
+    ctx.restore();
+  },
+  afterDatasetsDraw(chart) {
+    const labels = chart.$pointLabels || [];
+    if (!labels.length) return;
+    const { ctx, scales, chartArea } = chart;
+    ctx.save();
+    ctx.font = "11px 'JetBrains Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    labels.forEach((l) => {
+      const px = scales.x.getPixelForValue(l.x);
+      const py = scales.y.getPixelForValue(l.y);
+      if (px < chartArea.left - 40 || px > chartArea.right + 40) return;
+      ctx.fillStyle = l.color;
+      ctx.fillText(l.text, px, py - 6);
+    });
+    ctx.restore();
+  },
+};
+
+function computeMortgageLocks(visible) {
+  const map = {};
+  visible.forEach((s) => {
+    const sim = sims[s.id];
+    if (!sim || !sim.reached || sim.goalMonth == null) return;
+    const startRow = sim.data.find((d) => d.phase === "mortgage");
+    if (!startRow) return;
+    const lockedPrice = (sim.totals.downPaymentUsed || 0) + (sim.totals.loanTaken || 0);
+    if (!lockedPrice) return;
+    map[s.id] = { start: startRow.month, end: sim.goalMonth, price: lockedPrice, color: s.color };
+  });
+  return map;
+}
+
+function computeCashPurchaseLabels(visible, mortgageLocks) {
+  const map = {};
+  visible.forEach((s) => {
+    const sim = sims[s.id];
+    if (!sim || !sim.reached || sim.goalMonth == null) return;
+    if (mortgageLocks[s.id]) return;
+    const price = sim.totals.cashPurchasePrice;
+    if (!price) return;
+    map[s.id] = { month: sim.goalMonth, price, color: s.color };
+  });
+  return map;
+}
+
+function computeTimeMarkers(visible, mortgageLocks) {
+  const list = [];
+  visible.forEach((s) => {
+    const sim = sims[s.id];
+    if (!sim) return;
+    const lock = mortgageLocks[s.id];
+    if (lock) list.push({ x: +(lock.start / 12).toFixed(3), color: s.color });
+    const moveMatchesGoal = sim.movedInMonth != null && sim.reached && sim.goalMonth != null && sim.movedInMonth === sim.goalMonth;
+    if (sim.movedInMonth != null && !moveMatchesGoal) list.push({ x: +(sim.movedInMonth / 12).toFixed(3), color: s.color });
+    if (sim.reached && sim.goalMonth != null) list.push({ x: +(sim.goalMonth / 12).toFixed(3), color: s.color });
+  });
+  return list;
+}
+
+function computeValueDomainMax(visible, maxLen) {
+  let max = 0;
+  for (let i = 0; i < maxLen; i++) {
+    const gp = priceAtMonth(state.global, i);
+    if (gp > max) max = gp;
+    visible.forEach((s) => {
+      const sim = sims[s.id];
+      const d = sim?.data[i];
+      const pastGoal = sim?.reached && sim.goalMonth != null && i > sim.goalMonth;
+      const v = pastGoal ? null : d ? d.capitalValue : null;
+      if (v != null && v > max) max = v;
+    });
+  }
+  return max > 0 ? max * 1.05 : 1000000;
+}
+
+function ensureProgressChart() {
+  if (!charts.progress && chartJsAvailable()) {
+    const ctx = document.getElementById("progressChart");
+    const c = themeColors();
+    charts.progress = new Chart(ctx, {
+      type: "line",
+      data: { datasets: [] },
+      plugins: [progressAnnotationsPlugin],
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: "nearest", axis: "x", intersect: false },
+        scales: {
+          x: { type: "linear", grid: { display: false }, ticks: { color: c.axis, ...monthAxisTicksConfig() } },
+          y: { min: 0, max: 100, grid: { color: c.grid }, ticks: { color: c.axis, font: { size: 11 } } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...tooltipBaseStyle(),
+            filter: (item) => !item.dataset._marker && item.dataset._kind !== "locked",
+            callbacks: {
+              title: (items) => (items.length ? yearsLabel(Number(items[0].parsed.x), state.language) : ""),
+              label: (item) => {
+                if (item.dataset._kind === "target") return `${t(state.language, "targetPriceLabel")}: ${rub(item.parsed.y || 0, state.currency)}`;
+                const v = item.parsed.y;
+                return `${item.dataset.label}: ${state.progressMode === "value" ? rub(v || 0, state.currency) : (v == null ? "—" : v.toFixed(1) + "%")}`;
+              },
+            },
+          },
+        },
+      },
+    });
+    setupCrosshair();
+  }
+  updateProgressChart();
+}
+
+function buildProgressChartConfig() {
+  const mode = state.progressMode;
+  const visible = visibleScenarios();
+  const maxLen = Math.max(1, ...visible.map((s) => sims[s.id]?.data.length || 0));
+  const mortgageLocks = computeMortgageLocks(visible);
+  const cashPurchaseLabels = computeCashPurchaseLabels(visible, mortgageLocks);
+  const timeMarkers = computeTimeMarkers(visible, mortgageLocks);
+  const c = themeColors();
+  const datasets = [];
+
+  if (mode === "value") {
+    const targetData = [];
+    for (let i = 0; i < maxLen; i++) targetData.push({ x: +(i / 12).toFixed(3), y: priceAtMonth(state.global, i) });
+    datasets.push({ label: t(state.language, "targetPriceLabel"), data: targetData, borderColor: c.muted, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, cubicInterpolationMode: "monotone", fill: false, _kind: "target" });
+
+    visible.forEach((s) => {
+      const lock = mortgageLocks[s.id];
+      if (!lock) return;
+      datasets.push({
+        label: s.name + " (locked price)",
+        data: [{ x: +(lock.start / 12).toFixed(3), y: lock.price }, { x: +(lock.end / 12).toFixed(3), y: lock.price }],
+        borderColor: s.color, borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0, fill: false, _kind: "locked",
+      });
+    });
+  }
+
+  visible.forEach((s) => {
+    const sim = sims[s.id];
+    if (!sim) return;
+    let data;
+    if (mode === "value") {
+      data = sim.data
+        .filter((d) => !(sim.reached && sim.goalMonth != null && d.month > sim.goalMonth))
+        .map((d) => ({ x: d.years, y: d.capitalValue }));
+    } else {
+      data = sim.data.map((d) => ({ x: d.years, y: d.progressPct }));
+    }
+    datasets.push({
+      label: s.name, data, borderColor: s.color, backgroundColor: s.color, borderWidth: 2.2,
+      pointRadius: 0, cubicInterpolationMode: "monotone", fill: false, _kind: "main",
+    });
+  });
+
+  // Move-in first, goal-reached second, so when both land on the same month the solid
+  // "goal" dot ends up drawn on top (later dataset in the array = drawn later = on top).
+  visible.forEach((s) => {
+    const sim = sims[s.id];
+    if (!sim) return;
+    if (sim.movedInMonth != null) {
+      const d = sim.data.find((row) => row.month === sim.movedInMonth);
+      const yVal = mode === "value" ? (d ? d.capitalValue : 0) : (d ? d.progressPct : 0);
+      datasets.push({
+        label: s.name + " (move-in)", data: [{ x: +(sim.movedInMonth / 12).toFixed(3), y: yVal }],
+        showLine: false, pointStyle: "circle", pointRadius: 5, backgroundColor: c.inputBg, borderColor: s.color, borderWidth: 2, _marker: true,
+      });
+    }
+  });
+  visible.forEach((s) => {
+    const sim = sims[s.id];
+    if (!sim) return;
+    if (sim.reached && sim.goalMonth != null) {
+      const goalRow = sim.data.find((row) => row.month === sim.goalMonth);
+      const yVal = mode === "value" ? (goalRow ? goalRow.capitalValue : 0) : 100;
+      datasets.push({
+        label: s.name + " (goal)", data: [{ x: +(sim.goalMonth / 12).toFixed(3), y: yVal }],
+        showLine: false, pointStyle: "circle", pointRadius: 6, backgroundColor: s.color, borderColor: c.inputBg, borderWidth: 1.5, _marker: true,
+      });
+    }
+  });
+
+  const pointLabels = [];
+  if (mode === "value") {
+    Object.values(mortgageLocks).forEach((lock) => {
+      pointLabels.push({ x: +(lock.start / 12).toFixed(3), y: lock.price, text: rub(lock.price, state.currency), color: lock.color });
+    });
+    Object.values(cashPurchaseLabels).forEach((info) => {
+      pointLabels.push({ x: +(info.month / 12).toFixed(3), y: info.price, text: rub(info.price, state.currency), color: info.color });
+    });
+  }
+
+  return { datasets, timeMarkers, pointLabels, valueDomainMax: mode === "value" ? computeValueDomainMax(visible, maxLen) : null };
+}
+
+function updateProgressChart() {
+  updateProgressLegend();
+  updateProgressMarkersLegendText();
+  if (!charts.progress) return;
+  const { datasets, timeMarkers, pointLabels, valueDomainMax } = buildProgressChartConfig();
+  charts.progress.data.datasets = datasets;
+  charts.progress.$timeMarkers = timeMarkers;
+  charts.progress.$pointLabels = pointLabels;
+  const y = charts.progress.options.scales.y;
+  if (state.progressMode === "percent") {
+    y.min = 0; y.max = 100;
+    y.ticks.callback = (v) => v + "%";
+  } else {
+    y.min = 0; y.max = valueDomainMax;
+    y.ticks.callback = (v) => (v / 1000).toFixed(0) + "k";
+  }
+  charts.progress.update("none");
+}
+
+function updateProgressLegend() {
+  const el = document.getElementById("progress-legend");
+  if (!el) return;
+  const visible = visibleScenarios();
+  let html = "";
+  if (state.progressMode === "value") {
+    html += `<span class="np-legend-item"><span class="np-legend-swatch" style="background:var(--muted)"></span>${escapeHtml(t(state.language, "targetPriceDashedLegend"))}</span>`;
+  }
+  html += visible.map((s) => `<span class="np-legend-item"><span class="np-legend-swatch" style="background:${s.color}"></span>${escapeHtml(s.name)}</span>`).join("");
+  el.innerHTML = html;
+}
+
+function updateProgressMarkersLegendText() {
+  const lang = state.language;
+  const titleEl = document.getElementById("progress-chart-title");
+  const descEl = document.getElementById("progress-chart-desc");
+  if (titleEl) titleEl.textContent = t(lang, "tabProgress") + (state.progressMode === "percent" ? ", %" : "");
+  if (descEl) {
+    descEl.textContent = state.progressMode === "percent" ? t(lang, "progressDescPercent") : t(lang, "progressDescValue");
+  }
+}
+
+// ---- custom crosshair overlay (mirrors the original's hand-rolled crosshair, but uses
+// Chart.js's own pixel<->value scale conversion instead of parsing rendered SVG geometry) ----
+function setupCrosshair() {
+  const wrap = document.getElementById("progressChartWrap");
+  const vLine = document.getElementById("crosshair-v");
+  const hLine = document.getElementById("crosshair-h");
+  const xLabel = document.getElementById("crosshair-xlabel");
+  const yLabel = document.getElementById("crosshair-ylabel");
+  if (!wrap || wrap.dataset.crosshairBound) return;
+  wrap.dataset.crosshairBound = "1";
+
+  const hide = () => {
+    [vLine, hLine, xLabel, yLabel].forEach((el) => el && el.classList.remove("visible"));
+  };
+
+  wrap.addEventListener("mousemove", (evt) => {
+    const chart = charts.progress;
+    if (!chart) return;
+    const rect = wrap.getBoundingClientRect();
+    const mouseX = evt.clientX - rect.left;
+    const mouseY = evt.clientY - rect.top;
+    if (mouseX < chart.chartArea.left || mouseX > chart.chartArea.right || mouseY < chart.chartArea.top || mouseY > chart.chartArea.bottom) {
+      hide();
+      return;
+    }
+    const xVal = chart.scales.x.getValueForPixel(mouseX);
+    const yVal = chart.scales.y.getValueForPixel(mouseY);
+
+    vLine.style.left = mouseX + "px"; vLine.classList.add("visible");
+    hLine.style.top = mouseY + "px"; hLine.classList.add("visible");
+    xLabel.style.left = mouseX + "px"; xLabel.textContent = monthsToYM(Math.round(xVal * 12), state.language); xLabel.classList.add("visible");
+    yLabel.style.top = mouseY + "px";
+    yLabel.textContent = state.progressMode === "percent" ? `${yVal.toFixed(1)}%` : rub(yVal, state.currency);
+    yLabel.classList.add("visible");
+  });
+  wrap.addEventListener("mouseleave", hide);
+}
+
+// ---- outflow chart ----
+function ensureOutflowChart() {
+  if (!charts.outflow && chartJsAvailable()) {
+    const ctx = document.getElementById("outflowChart");
+    const c = themeColors();
+    charts.outflow = new Chart(ctx, {
+      type: "line",
+      data: { datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: "nearest", axis: "x", intersect: false },
+        scales: {
+          x: { type: "linear", grid: { display: false }, ticks: { color: c.axis, ...monthAxisTicksConfig() } },
+          y: { grid: { color: c.grid }, ticks: { color: c.axis, font: { size: 11 }, callback: (v) => (v / 1000).toFixed(0) + "k" } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...tooltipBaseStyle(),
+            callbacks: {
+              title: (items) => (items.length ? yearsLabel(Number(items[0].parsed.x), state.language) : ""),
+              label: (item) => `${item.dataset.label}: ${rub(item.parsed.y || 0, state.currency)}${t(state.language, "perMonthShort")}`,
+            },
+          },
+        },
+      },
+    });
+  }
+  updateOutflowChart();
+}
+
+function buildOutflowDatasets() {
+  return visibleScenarios().map((s) => {
+    const sim = sims[s.id];
+    return {
+      label: s.name,
+      data: sim ? sim.data.map((d) => ({ x: d.years, y: d.outflow })) : [],
+      borderColor: s.color, backgroundColor: s.color, borderWidth: 2, pointRadius: 0, stepped: "after", fill: false,
+    };
+  });
+}
+
+function updateOutflowChart() {
+  updateOutflowLegend();
+  if (!charts.outflow) return;
+  charts.outflow.data.datasets = buildOutflowDatasets();
+  charts.outflow.update("none");
+}
+
+function updateOutflowLegend() {
+  const el = document.getElementById("outflow-legend");
+  if (el) el.innerHTML = visibleScenarios().map((s) => `<span class="np-legend-item"><span class="np-legend-swatch" style="background:${s.color}"></span>${escapeHtml(s.name)}</span>`).join("");
+}
+
+// ---- detail (per-scenario breakdown) chart ----
+function ensureDetailChart() {
+  if (!charts.detail && chartJsAvailable()) {
+    const ctx = document.getElementById("detailChart");
+    const c = themeColors();
+    charts.detail = new Chart(ctx, {
+      type: "line",
+      data: { datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: "nearest", axis: "x", intersect: false },
+        scales: {
+          x: { type: "linear", grid: { display: false }, ticks: { color: c.axis, ...monthAxisTicksConfig() } },
+          y: { stacked: true, grid: { color: c.grid }, ticks: { color: c.axis, font: { size: 11 }, callback: (v) => (v / 1000).toFixed(0) + "k" } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...tooltipBaseStyle(),
+            filter: (item) => item.parsed.y > 0,
+            itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
+            callbacks: {
+              title: (items) => (items.length ? yearsLabel(Number(items[0].parsed.x), state.language) : ""),
+              label: (item) => `${item.dataset.label}: ${rub(item.parsed.y, state.currency)}`,
+              footer: (items) => t(state.language, "totalPerMonthTooltip") + ": " + rub(items.reduce((sum, it) => sum + (it.parsed.y || 0), 0), state.currency),
+            },
+          },
+        },
+      },
+    });
+  }
+  updateDetailChart();
+}
+
+function buildDetailDatasets() {
+  const s = activeDetailScenario();
+  const sim = s ? sims[s.id] : null;
+  const lang = state.language;
+  const series = [
+    { key: "rentMonth", label: t(lang, "rentLabel"), color: "#5B9BD5" },
+    { key: "contributionMonth", label: t(lang, "savingsLegend"), color: "#7FB77E" },
+    { key: "principalMonth", label: t(lang, "principalLegend"), color: "#4FD1C5" },
+    { key: "interestMonth", label: t(lang, "interestLegend"), color: "#E8735A" },
+  ];
+  return series.map((cfg) => ({
+    label: cfg.label,
+    data: sim ? sim.data.map((d) => ({ x: d.years, y: Math.round(d[cfg.key]) })) : [],
+    borderColor: cfg.color, backgroundColor: cfg.color + "BF", borderWidth: 1, pointRadius: 0,
+    stepped: "after", fill: true, stack: "p",
+  }));
+}
+
+function updateDetailChart() {
+  updateDetailLegendAndPicker();
+  if (!charts.detail) return;
+  charts.detail.data.datasets = buildDetailDatasets();
+  charts.detail.update("none");
+}
+
+function updateDetailLegendAndPicker() {
+  const pickerEl = document.getElementById("detail-picker");
+  const active = activeDetailScenario();
+  if (pickerEl) {
+    pickerEl.innerHTML = state.scenarios.map((s) => `
+      <button class="np-pick${active && s.id === active.id ? " active" : ""}" data-pick-id="${s.id}" style="${active && s.id === active.id ? `border-color:${s.color};color:${s.color}` : ""}">
+        <span class="np-legend-swatch" style="background:${s.color}"></span> ${escapeHtml(s.name)}
+      </button>`).join("");
+  }
+
+  const hintEl = document.getElementById("detail-hint");
+  if (hintEl) {
+    const sim = active ? sims[active.id] : null;
+    const lang = state.language;
+    if (sim && active) {
+      let text = `${escapeHtml(t(lang, "overFullTermFor"))} «${escapeHtml(active.name)}»: ${escapeHtml(t(lang, "interestToBank"))} ${escapeHtml(rub(sim.totals.interestPaid, state.currency))}, ${escapeHtml(t(lang, "principalDash"))} ${escapeHtml(rub(sim.totals.principalPaid, state.currency))}`;
+      if (sim.totals.interestPaid > 0 && sim.totals.principalPaid > 0) {
+        const pct = Math.round((sim.totals.interestPaid / (sim.totals.principalPaid + (sim.totals.downPaymentUsed || 0))) * 100);
+        text += ` (${escapeHtml(t(lang, "overpaymentApprox"))} ${pct}% ${escapeHtml(t(lang, "ofFinancedPart"))})`;
+      }
+      text += ".";
+      hintEl.innerHTML = text;
+      hintEl.style.display = "";
+    } else {
+      hintEl.innerHTML = "";
+      hintEl.style.display = "none";
+    }
+  }
+}
+
+function setDetailId(id) {
+  state.detailId = id;
+  updateDetailChart();
+}
+
+// ---- spend chart ----
+function ensureSpendChart() {
+  if (!charts.spend && chartJsAvailable()) {
+    const ctx = document.getElementById("spendChart");
+    const c = themeColors();
+    charts.spend = new Chart(ctx, {
+      type: "bar",
+      data: { labels: [], datasets: [] },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { stacked: true, grid: { color: c.grid }, ticks: { color: c.axis, font: { size: 11 }, callback: (v) => (v / 1000000).toFixed(1) + "M" } },
+          y: { stacked: true, grid: { display: false }, ticks: { color: c.axis, font: { size: 12 } } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...tooltipBaseStyle(),
+            callbacks: {
+              title: (items) => (items.length ? items[0].label : ""),
+              label: (item) => `${item.dataset.label}: ${rub(item.parsed.x || 0, state.currency)}`,
+            },
+          },
+        },
+      },
+    });
+  }
+  updateSpendChart();
+}
+
+function buildSpendData() {
+  const visible = visibleScenarios();
+  const labels = visible.map((s) => s.name);
+  const lang = state.language;
+  const seriesCfg = [
+    { key: "rentPaid", label: t(lang, "rentLabel"), color: "#5B9BD5" },
+    { key: "cashPurchasePrice", label: t(lang, "cashPurchaseLegend"), color: "#F2789F" },
+    { key: "downPaymentUsed", label: t(lang, "downPaymentLegend"), color: "#7FB77E" },
+    { key: "principalPaid", label: t(lang, "principalLegend"), color: "#4FD1C5" },
+    { key: "interestPaid", label: t(lang, "interestLegend"), color: "#E8735A" },
+    { key: "oneTimeCostPaid", label: t(lang, "oneTimeCostsLegend"), color: "#C9A86A" },
+  ];
+  const datasets = seriesCfg.map((cfg) => ({
+    label: cfg.label,
+    data: visible.map((s) => sims[s.id]?.totals?.[cfg.key] || 0),
+    backgroundColor: cfg.color,
+    stack: "a",
+  }));
+  return { labels, datasets };
+}
+
+function updateSpendChart() {
+  if (!charts.spend) return;
+  const { labels, datasets } = buildSpendData();
+  charts.spend.data.labels = labels;
+  charts.spend.data.datasets = datasets;
+  const container = document.getElementById("spendChartContainer");
+  if (container) container.style.height = Math.max(260, visibleScenarios().length * 70) + "px";
+  charts.spend.resize();
+  charts.spend.update("none");
+}
+
+function updateAllCharts() {
+  updateProgressChart();
+  updateOutflowChart();
+  updateDetailChart();
+  if (charts.spend) updateSpendChart();
+}
+
+// ============================================================
+// ---------- tabs ----------
+// ============================================================
+function switchTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll(".np-tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
+  document.querySelectorAll(".np-tab-panel").forEach((el) => el.classList.toggle("np-tab-active", el.dataset.tabPanel === tab));
+
+  if (tab === "progress") {
+    ensureProgressChart();
+    charts.progress && charts.progress.resize();
+  } else if (tab === "outflow") {
+    ensureOutflowChart();
+    ensureDetailChart();
+    charts.outflow && charts.outflow.resize();
+    charts.detail && charts.detail.resize();
+  } else if (tab === "spend") {
+    ensureSpendChart();
+    charts.spend && charts.spend.resize();
+  }
+}
+// ============================================================
+// ---------- scenario CRUD ----------
+// ============================================================
+function fullRefresh({ rebuildCards = false } = {}) {
+  recomputeSims();
+  if (rebuildCards) renderAllCards();
+  else updateAllCardsComputed();
+  updateScenarioCountHeading();
+  updateTable();
+  updateAllCharts();
+}
+
+function addScenario(presetKey) {
+  const preset = SCENARIO_PRESETS.find((p) => p.key === presetKey) || SCENARIO_PRESETS[0];
+  const color = PALETTE[state.scenarios.length % PALETTE.length];
+  const name = preset.key === "blank" ? `${t(state.language, "scenarioDefaultName")} ${state.scenarios.length + 1}` : t(state.language, preset.labelKey);
+  state.scenarios.push(preset.build(name, color));
+  closeAddMenus();
+  fullRefresh({ rebuildCards: true });
+}
+
+function removeScenario(id) {
+  state.scenarios = state.scenarios.filter((s) => s.id !== id);
+  collapsedCards.delete(id);
+  if (state.detailId === id) state.detailId = null;
+  fullRefresh({ rebuildCards: true });
+}
+
+function duplicateScenario(id) {
+  const s = state.scenarios.find((x) => x.id === id);
+  if (!s) return;
+  const copy = { ...JSON.parse(JSON.stringify(s)), id: uid(), name: s.name + t(state.language, "copySuffix"), color: PALETTE[state.scenarios.length % PALETTE.length] };
+  state.scenarios.push(copy);
+  fullRefresh({ rebuildCards: true });
+}
+
+function moveScenario(id, dir) {
+  const i = state.scenarios.findIndex((s) => s.id === id);
+  const j = i + dir;
+  if (i === -1 || j < 0 || j >= state.scenarios.length) return;
+  [state.scenarios[i], state.scenarios[j]] = [state.scenarios[j], state.scenarios[i]];
+  fullRefresh({ rebuildCards: true });
+}
+
+function toggleCardOpen(id) {
+  if (collapsedCards.has(id)) collapsedCards.delete(id);
+  else collapsedCards.add(id);
+  const isOpen = !collapsedCards.has(id);
+  const bodyEl = document.getElementById(`body-${id}`);
+  if (bodyEl) bodyEl.classList.toggle("hidden", !isOpen);
+  const cardEl = document.querySelector(`.np-card[data-scenario-id="${id}"]`);
+  const toggleBtn = cardEl?.querySelector('[data-action="toggle-open"]');
+  if (toggleBtn) {
+    toggleBtn.innerHTML = iconHtml(isOpen ? "chevron-up" : "chevron-down", 15);
+    safeCreateIcons();
+  }
+}
+
+function toggleScenarioHidden(id) {
+  const s = state.scenarios.find((x) => x.id === id);
+  if (!s) return;
+  s.hidden = !s.hidden;
+  const cardEl = document.querySelector(`.np-card[data-scenario-id="${id}"]`);
+  if (cardEl) {
+    cardEl.classList.toggle("np-card-hidden", s.hidden);
+    const btn = cardEl.querySelector('[data-action="toggle-hidden"]');
+    if (btn) {
+      btn.innerHTML = iconHtml(s.hidden ? "eye-off" : "eye", 15);
+      btn.title = s.hidden ? t(state.language, "showInAnalytics") : t(state.language, "hideFromAnalytics");
+      safeCreateIcons();
+    }
+  }
+  fullRefresh({ rebuildCards: false });
+}
+
+function closeAddMenus() {
+  document.querySelectorAll("[data-add-menu].open").forEach((el) => el.classList.remove("open"));
+}
+
+// ============================================================
+// ---------- import / export ----------
+// ============================================================
+function exportScenarios() {
+  const payload = { kind: "property-planner-export", version: 1, exportedAt: new Date().toISOString(), global: state.global, currency: state.currency, scenarios: state.scenarios };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `property-scenarios-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function handleImportFile(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(String(ev.target.result));
+      const importedScenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios : Array.isArray(parsed) ? parsed : null;
+      if (!importedScenarios || !importedScenarios.length) throw new Error("no scenarios");
+      const cleaned = importedScenarios.map((s, i) => ({
+        ...makeScenario(s.name || `${t(state.language, "scenarioDefaultName")} ${i + 1}`, s.color || PALETTE[i % PALETTE.length]),
+        ...s,
+        id: uid(),
+      }));
+      state.scenarios = cleaned;
+      collapsedCards.clear();
+      if (parsed.global && typeof parsed.global === "object") {
+        state.global = { ...state.global, ...parsed.global };
+        syncGoalbarInputs();
+      }
+      state.currency = typeof parsed.currency === "string" ? parsed.currency : "₽";
+      renderCurrencySelect();
+      refreshCurrencySuffixes();
+      state.importError = null;
+      updateImportError();
+      fullRefresh({ rebuildCards: true });
+    } catch (err) {
+      state.importError = t(state.language, "importErrorText");
+      updateImportError();
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+}
+
+// ============================================================
+// ---------- event delegation ----------
+// ============================================================
+function handleGlobalFieldInput(e) {
+  const tgt = e.target;
+  if (!tgt.matches("[data-field]")) return;
+  const field = tgt.dataset.field;
+  let raw = tgt.value;
+  if (raw === "") {
+    setDeep(state.global, field, 0);
+  } else {
+    raw = stripLeadingZero(raw);
+    if (raw !== tgt.value) tgt.value = raw;
+    const num = parseFloat(raw);
+    setDeep(state.global, field, isNaN(num) ? 0 : num);
+  }
+  if (field === "price0") updateGoalbarErrors();
+  fullRefresh({ rebuildCards: false });
+}
+
+function handleScenarioFieldInput(e) {
+  const tgt = e.target;
+  if (!tgt.matches("[data-field]")) return;
+  const cardEl = tgt.closest("[data-scenario-id]");
+  if (!cardEl) return;
+  const scenario = state.scenarios.find((s) => s.id === cardEl.dataset.scenarioId);
+  if (!scenario) return;
+  const path = tgt.dataset.field;
+
+  if (tgt.type === "number") {
+    let raw = tgt.value;
+    if (raw === "") {
+      setDeep(scenario, path, 0);
+    } else {
+      raw = stripLeadingZero(raw);
+      if (raw !== tgt.value) tgt.value = raw;
+      const num = parseFloat(raw);
+      setDeep(scenario, path, isNaN(num) ? 0 : num);
+    }
+  } else if (tgt.type === "color") {
+    setDeep(scenario, path, tgt.value);
+    // the accent color drives the card's left border, dot, and toggle-on color via a CSS
+    // custom property — safe to patch directly without a card rebuild.
+    cardEl.style.setProperty("--accent", tgt.value);
+    const dot = cardEl.querySelector(".np-color-picker .np-dot");
+    if (dot) dot.style.background = tgt.value;
+  } else {
+    setDeep(scenario, path, tgt.value);
+  }
+  fullRefresh({ rebuildCards: false });
+}
+
+function handleScenarioToggleOrRadio(e) {
+  const tgt = e.target;
+  const cardEl = tgt.closest("[data-scenario-id]");
+  if (!cardEl) return;
+  const scenario = state.scenarios.find((s) => s.id === cardEl.dataset.scenarioId);
+  if (!scenario) return;
+  if (tgt.matches("[data-toggle]")) {
+    setDeep(scenario, tgt.dataset.toggle, tgt.checked);
+    rebuildSingleCard(scenario.id);
+    fullRefresh({ rebuildCards: false });
+  } else if (tgt.matches("[data-radio]")) {
+    setDeep(scenario, tgt.dataset.radio, tgt.value);
+    rebuildSingleCard(scenario.id);
+    fullRefresh({ rebuildCards: false });
+  }
+}
+
+function handleAppClick(e) {
+  const addMenuWrap = e.target.closest("[data-add-menu]");
+  const clickedToggleBtn = e.target.closest('[data-action="toggle-add-menu"]');
+  if (clickedToggleBtn && addMenuWrap) {
+    const willOpen = !addMenuWrap.classList.contains("open");
+    closeAddMenus();
+    addMenuWrap.classList.toggle("open", willOpen);
+  } else if (!addMenuWrap) {
+    closeAddMenus();
+  }
+
+  const btn = e.target.closest("[data-action]");
+  if (btn) {
+    const action = btn.dataset.action;
+    if (action === "toggle-add-menu") return;
+    if (action === "add-scenario") return addScenario(btn.dataset.presetKey);
+    if (action === "export") return exportScenarios();
+    if (action === "trigger-import") return document.getElementById("file-input").click();
+    if (action === "switch-tab") return switchTab(btn.dataset.tab);
+    if (action === "toggle-theme") return toggleTheme();
+    if (action === "toggle-hidden-table") return toggleScenarioHidden(btn.dataset.scenarioId);
+
+    const cardEl = btn.closest("[data-scenario-id]");
+    const scenarioId = cardEl ? cardEl.dataset.scenarioId : null;
+    if (!scenarioId) return;
+    if (action === "remove-scenario") return removeScenario(scenarioId);
+    if (action === "duplicate-scenario") return duplicateScenario(scenarioId);
+    if (action === "move-up") return moveScenario(scenarioId, -1);
+    if (action === "move-down") return moveScenario(scenarioId, 1);
+    if (action === "toggle-open") return toggleCardOpen(scenarioId);
+    if (action === "toggle-hidden") return toggleScenarioHidden(scenarioId);
+    return;
+  }
+  const pickBtn = e.target.closest("[data-pick-id]");
+  if (pickBtn) setDetailId(pickBtn.dataset.pickId);
+}
+
+function handleAppChange(e) {
+  if (e.target.id === "currency-select") {
+    state.currency = e.target.value;
+    refreshCurrencySuffixes();
+    fullRefresh({ rebuildCards: false });
+    return;
+  }
+  if (e.target.id === "language-select") {
+    setLanguage(e.target.value);
+    return;
+  }
+  if (e.target.matches("[data-progress-mode]")) {
+    setProgressMode(e.target.dataset.progressMode);
+  }
+}
+
+// Language touches nearly every string in the UI — the simplest reliably-correct approach is
+// a comprehensive re-render (static text, goalbar, cards, add-menus, table headers) plus a
+// chart destroy/recreate cycle, the same pattern already used for theme switching (chart
+// tooltips/legends/dataset labels are baked into the Chart.js config at creation time).
+function setLanguage(lang) {
+  state.language = lang;
+  applyStaticTranslations();
+  applyTheme();
+  renderCurrencySelect();
+  renderLanguageSelect();
+  renderGoalbar();
+  document.getElementById("add-menu-header").innerHTML = addMenuHtml();
+  document.getElementById("add-menu-empty").innerHTML = addMenuHtml();
+  safeCreateIcons();
+  recomputeSims();
+  renderAllCards();
+  updateScenarioCountHeading();
+  updateTable();
+  updateTableHeaders();
+  updateImportError();
+  destroyAllCharts();
+  switchTab(state.tab);
+}
+
+function setProgressMode(mode) {
+  state.progressMode = mode;
+  document.querySelectorAll("[data-progress-mode]").forEach((input) => {
+    input.closest(".np-radio").classList.toggle("active", input.dataset.progressMode === mode);
+  });
+  updateProgressChart();
+}
+
+function bindDelegatedEvents() {
+  document.getElementById("goalbar-fields").addEventListener("input", handleGlobalFieldInput);
+  const cardsContainer = document.getElementById("cards-container");
+  cardsContainer.addEventListener("input", handleScenarioFieldInput);
+  cardsContainer.addEventListener("change", handleScenarioToggleOrRadio);
+  document.getElementById("app-root").addEventListener("click", handleAppClick);
+  document.getElementById("app-root").addEventListener("change", handleAppChange);
+  document.getElementById("file-input").addEventListener("change", handleImportFile);
+}
+
+// ============================================================
+// ---------- init ----------
+// ============================================================
+function init() {
+  state.theme = detectPreferredTheme();
+  if (typeof Chart !== "undefined") {
+    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+  }
+  applyTheme();
+  applyStaticTranslations();
+  renderCurrencySelect();
+  renderLanguageSelect();
+  renderGoalbar();
+  document.getElementById("add-menu-header").innerHTML = addMenuHtml();
+  document.getElementById("add-menu-empty").innerHTML = addMenuHtml();
+  bindDelegatedEvents();
+  state.scenarios = [];
+  recomputeSims();
+  renderAllCards();
+  updateScenarioCountHeading();
+  updateTable();
+  updateProgressMarkersLegendText();
+  switchTab("progress");
+  safeCreateIcons();
+}
+
+document.addEventListener("DOMContentLoaded", init);
+
+</script>
+</body>
+</html>
